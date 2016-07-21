@@ -151,14 +151,12 @@ paramastrapPhylipsDir.flatMap {  id, dir -> dir.listFiles().collect { [id, it] }
                      .set { paramastrapPhylips }
 
 /*
- *  Split the strap alignment phylips into chunks of one alignment
- */
-
-/* For every item in paramastrapPhylips (contains a set of val(datasetID), file(multi_phylip_file)) :
- *   get the alignmentID from multi_phylip_file.baseName
- *   split file(multi_phylip_file) with splitPhylip
- *   create a new channel that emits a set containing val(datasetID), val(alignmentID), val(strapID), file(single_phylip)
+ *  Split the strap alignment phylips into chunks of one alignment:
  *
+ *   For every item in paramastrapPhylips (contains a set of val(datasetID), file(multi_phylip_file)) :
+ *       get the alignmentID from multi_phylip_file.baseName
+ *       split file(multi_phylip_file) with splitPhylip
+ *       create a new channel that emits a set containing val(datasetID), val(alignmentID), val(strapID), file(single_phylip)
  */
 
 def splitPhylip(file) {
@@ -182,14 +180,16 @@ def splitPhylip(file) {
  * Split each directory in the channel paramastrapPhylipsDir into 
  */
 
-splitPhylips = Channel.create()
+
 paramastrapPhylips
-    .map { set ->
+    .flatMap { set ->
         def datasetID = set[0]
         def alignmentID = set[1].baseName
         def file =  set[1]
-        splitPhylip(file).eachWithIndex{ phylip, strapID -> splitPhylips << tuple(datasetID, alignmentID, strapID, phylip) } 
+        def strapID = 0 
+        splitPhylip(file).collect{ phylip -> tuple(datasetID, alignmentID, strapID++, phylip) } 
      }
+     .set { splitPhylips  }  
 
 
 process create_strap_trees {
@@ -203,7 +203,6 @@ process create_strap_trees {
     set val (datasetID), file("${alignmentID}_${strapID}.nwk") into paramastrapTrees
     set val (datasetID), file("${alignmentID}_${strapID}.phylip") into paramastrapSplitPhylips
 
-
     script:
     //
     // Generate Strap Trees: Generate strap trees in Newick format
@@ -211,10 +210,7 @@ process create_strap_trees {
 
     """
     echo "${phylip}" | tee ${alignmentID}_${strapID}.phylip  
-
-    raxmlHPC-SSE3 -m PROTGAMMAJTT -p 4533 -T 1 -s ${alignmentID}_${strapID}.phylip -n tmp
-    cp RAxML_bestTree.tmp ${alignmentID}_${strapID}.nwk
-    rm *.tmp
+    FastTree ${alignmentID}_${strapID}.phylip > ${alignmentID}_${strapID}.nwk
 
     """
 }
