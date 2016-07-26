@@ -125,6 +125,7 @@ process create_strap_alignments {
     seed=4533
     alternativeMSAsFASTA=( ${alternativeAlignmentsDir}/*".fasta" )
     alternativeMSAsPHYLIP=("\${alternativeMSAsFASTA[@]/.fasta/.phylip}")
+    straps=\$((${straps_num} + 1))
 
     x=0
     mkdir -p paramastrap_phylips/alternativeMSA
@@ -132,7 +133,7 @@ process create_strap_alignments {
     do
         outfileBase=\${i%.fasta}
         esl-reformat phylip \$i > \$outfileBase.phylip
-        echo -e "\$outfileBase.phylip\nR\n${straps_num}\nY\n\$seed\n" | seqboot
+        echo -e "\$outfileBase.phylip\nR\n\${straps}\nY\n\$seed\n" | seqboot
         mv outfile paramastrap_phylips/\${outfileBase}_strap.phylip
         mv paramastrap_phylips/\${outfileBase}_strap.phylip paramastrap_phylips/.
     done
