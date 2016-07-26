@@ -140,7 +140,7 @@ process create_strap_alignments {
     rm -rf paramastrap_phylips/alternativeMSA
 
     esl-reformat phylip ${baseAlignment} > base.phylip
-    echo -e "base.phylip\nR\n${straps_num}\nY\n\$seed\n" | seqboot
+    echo -e "base.phylip\nR\n\${straps}\nY\n\$seed\n" | seqboot
     mv outfile bootstrap.phylip
 
     """
@@ -192,6 +192,16 @@ paramastrapPhylips
      }
      .set { splitPhylips  }  
 
+bootstrapPhylips
+    .flatMap { set ->
+        def datasetID = set[0]
+        def alignmentID = set[1].baseName
+        def file =  set[1]
+        def strapID = 0
+        splitPhylip(file).collect{ phylip -> tuple(datasetID, alignmentID, strapID++, phylip) }
+     }
+     .set { splitBasePhylips  }
+
 
 process create_strap_trees {
     tag "bootstrap samples: $datasetID"
@@ -211,6 +221,29 @@ process create_strap_trees {
 
     """
     echo "${phylip}" | tee ${alignmentID}_${strapID}.phylip  
+    FastTree ${alignmentID}_${strapID}.phylip > ${alignmentID}_${strapID}.nwk
+
+    """
+}
+
+process create_default_strap_trees {
+    tag "bootstrap samples: $datasetID"
+    publishDir "${params.output}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
+
+    input:
+    set val (datasetID), val(alignmentID), val(strapID), val(phylip) from splitBasePhylips
+
+    output:
+    set val (datasetID), file("${alignmentID}_${strapID}.nwk") into paramastrapBaseTrees
+    set val (datasetID), file("${alignmentID}_${strapID}.phylip") into paramastrapBaseSplitPhylips
+
+    script:
+    //
+    // Generate Strap Trees: Generate strap trees in Newick format
+    //
+
+    """
+    echo "${phylip}" | tee ${alignmentID}_${strapID}.phylip
     FastTree ${alignmentID}_${strapID}.phylip > ${alignmentID}_${strapID}.nwk
 
     """

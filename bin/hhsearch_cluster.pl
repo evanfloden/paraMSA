@@ -8,6 +8,7 @@ use Algorithm::Cluster qw/kcluster/;
 my $fa_dir  = $ARGV[0];
 my $a3m_dir = $ARGV[1];
 my $numClusters = $ARGV[2];
+my $outfile = $ARGV[3];
 
 system("mkdir -p $a3m_dir");
 system("mkdir -p hhm_db");
@@ -101,7 +102,7 @@ foreach(@{$clusters}) {
 }
 
 # Print out the first alignment name from the set of alignments
-my $repClusters='repCluster.txt';
+my $repClusters= $outfile;
 
 open(my $file, '>', $repClusters);
 for ($i = 0; $i < $params{"nclusters"}; $i++) {
