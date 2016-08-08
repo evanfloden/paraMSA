@@ -24,12 +24,20 @@ process tree_lists {
     set val(datasetID), file (resultsDir) from datasets
 
     output:
-    set val(datasetID), file('base_10_TreesConcat.nwk') into baseConcatenatedTrees
-    file('1x10_TreesConcat.txt') into ConcatenatedTrees_1x10
-    file('10x1_TreesConcat.txt') into ConcatenatedTrees_10x1
+    file('nodeSupportForBaseTree.result') into nodeSupport
 
     script:
     """
+
+    if [[ $datasetID =~ ^tips([0-9]+)_([0-9].[0-9])_[0-9]+.[0-9]+\$ ]]
+    then
+        reference_tree=${baseDir}/tutorial/data/ref_trees/tips\${BASH_REMATCH[1]}/asymmetric_\${BASH_REMATCH[2]}.unroot.tree
+    else
+        echo "unable to parse string ${datasetID}"
+    fi 
+
+    base_tree=${resultsDir}/strap_trees/bootstrap_0.nwk;
+
     for file in ${resultsDir}/strap_trees/bootstrap_*.nwk;
     do 
         cat \$file >> base_10_TreesConcat.nwk
@@ -54,17 +62,25 @@ process tree_lists {
         values10x1+=(\$value10x1)
     done < 10_1_alignmentList.txt
 
+
     ls ${resultsDir}/alignments/alternativeMSA | while read file; 
     do
     if containsElement \$file \${vars1x10[@]}
         then
             echo "Selected: \$file for 10 bootstraps"
             name=\${file%.fasta}
-            eval echo -e "${resultsDir}/strap_trees/\${name}_strap_{0..9}.nwk\$'\n'" >> 1x10_TreesConcat.txt
+            ls -1a ${resultsDir}/strap_trees/\${name}_strap_{0..9}.nwk >> 1x10_filelist.txt
         else
             echo "Skipping: \$file"
         fi
     done
+ 
+    while read p; do
+      cat \$p >> 1x10_TreesConcat.nwk 
+    done <1x10_filelist.txt
+
+    echo ">1x10_TreesConcat.nwk" > supportList.txt
+
 
 
 
@@ -74,14 +90,24 @@ process tree_lists {
         then
             echo "Selected: \$file for 1 bootstraps"
             name=\${file%.fasta}
-            cat ${resultsDir}/strap_trees/\${name}_strap_0.nwk >> 10x1_TreesConcat.nwk
+            ls -1a ${resultsDir}/strap_trees/\${name}_strap_0.nwk >> 10x1_filelist.txt
         else
             echo "Skipping: \$file"
         fi
-    done 
+    done
+
+    while read p; do
+      cat \$p >> 10x1_TreesConcat.nwk
+    done <10x1_filelist.txt
+
+    echo ">10x1_TreesConcat.nwk" >> supportList.txt
 
 
+    t_coffee -other_pg seq_reformat \
+              -in \$base_tree \
+              -in2 supportList.txt \
+              -action +tree2ns \$reference_tree \
+              > nodeSupportForBaseTree.result
+    
     """
 }
-
-
