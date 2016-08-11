@@ -18,12 +18,15 @@ datasets = Channel
     .map { file -> tuple( file.baseName, file ) }
  
 process tree_lists {
-    publishDir "$results_path/CLUSTALW/$datasetID/", mode: 'copy', overwrite: 'true'
+    tag "tree_list: ${dataset_ID}"
+    publishDir "$results_path/CLUSTALW/$datasetID/nodeSupport", mode: 'copy', overwrite: 'true'
   
     input:
     set val(datasetID), file (resultsDir) from datasets
 
     output:
+    file('1x10_filelist.txt') into oneBytenfilelists
+    file('10x1_filelist.txt') into tenByonefilelists
     file('nodeSupportForBaseTree.result') into nodeSupport
 
     script:
@@ -62,7 +65,6 @@ process tree_lists {
         values10x1+=(\$value10x1)
     done < 10_1_alignmentList.txt
 
-
     ls ${resultsDir}/alignments/alternativeMSA | while read file; 
     do
     if containsElement \$file \${vars1x10[@]}
@@ -80,9 +82,6 @@ process tree_lists {
     done <1x10_filelist.txt
 
     echo ">1x10_TreesConcat.nwk" > supportList.txt
-
-
-
 
     ls ${resultsDir}/alignments/alternativeMSA | while read file;
     do
