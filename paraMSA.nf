@@ -43,8 +43,8 @@ straps_num     = params.straps as int
  */
  
 Channel
-    .fromPath( params.input )
-    .ifEmpty { error "Cannot find any input sequence files matching: ${params.input}" }
+    .fromPath( params.seq )
+    .ifEmpty { error "Cannot find any input sequence files matching: ${params.seq}" }
     .map { file -> tuple( file.baseName, file ) }
     .set { datasets }
 
@@ -62,7 +62,7 @@ process alignments {
     set val(datasetID), file(datasetFile) from datasets
 
     output:
-    set val(datasetID), file ("alternativeMSA") into alternativeAlignmentDirectories
+    set val(datasetID), file ("alternativeMSA") into alternativeAlignmentDirectories_A, alternativeAlignmentDirectories_B,  alternativeAlignmentDirectories_C
     set val(datasetID), file ("default_alignment.aln") into defaultAlignments
   
     script:
@@ -101,7 +101,7 @@ process create_strap_alignments {
     publishDir "${params.output}/${params.aligner}/${datasetID}/strap_alignments", mode: 'copy', overwrite: 'true'
 
     input:
-    set val(datasetID), file(alternativeAlignmentsDir) from alternativeAlignmentDirectories
+    set val(datasetID), file(alternativeAlignmentsDir) from alternativeAlignmentDirectories_A
     set val(datasetID), file(defaultAlignment) from defaultAlignments
 
 
@@ -134,7 +134,7 @@ process create_strap_alignments {
     done
     rm -rf paramastrap_phylips/alternativeMSA
 
-    esl-reformat phylip ${baseAlignment} > base.phylip
+    esl-reformat phylip ${defaultAlignment} > base.phylip
     echo -e "base.phylip\nR\n\${straps}\nY\n\$seed\n" | seqboot
     mv outfile bootstrap.phylip
 
@@ -175,7 +175,6 @@ def splitPhylip(file) {
 /*
  * Split each directory in the channel paramastrapPhylipsDir into 
  */
-
 
 paramastrapPhylips
     .flatMap { set ->
@@ -228,7 +227,7 @@ process strap_trees {
 }
 
 process default_strap_trees {
-    tag "bootstrap samples: $datasetID"
+    tag "default_strap_trees: $datasetID"
     publishDir "${params.output}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
 
     input:
@@ -252,11 +251,11 @@ process default_strap_trees {
 
 process alternative_alignment_concatenate {
     input:
-    set val(datasetID), file(alternativeAlignmentsDir) from AlternativeAlignmentsDirectories_B
-    each z from [1, 2, 5, 10, 25, 50, 100, 400]
+    set val(datasetID), file(alternativeAlignmentsDir) from alternativeAlignmentDirectories_B
+    each z from (1, 2, 5, 10, 25, 50, 100, 400)
 
     output:
-    set val(datasetID), val($z), file("${z}_concatenated_alignments.phylip") into concatenatedAlignmentPhylips
+    set val(datasetID), val(z), file("${z}_concatenated_alignments.phylip") into concatenatedAlignmentPhylips
 
     script:
     //
@@ -274,11 +273,11 @@ process alternative_alignment_concatenate {
         return 1
     }
 
-    perl $baseDir/bin/hhsearch_cluster.pl ${alternativeAlignmentsDir} a3m ${z} ${z}_$alignmentFileList.txt
+    perl $baseDir/bin/hhsearch_cluster.pl ${alternativeAlignmentsDir} a3m ${z} ${z}_alignmentFileList.txt
 
     while IFS=\\= read var_${z} value_${z}; do
     vars_${z}+=(\$var_${z})
-    values_${z}+=(\value_${z})
+    values_${z}+=(\$value_${z})
     done < ${z}_alignmentFileList.txt
 
     declare -a selectedAlignmentsArray
@@ -298,25 +297,45 @@ process alternative_alignment_concatenate {
     concatenate.pl --aln \${selectedAlignmentsArray[@]} --out ${z}_concatenated_alignments.aln
     esl-reformat phylip ${z}_concatenated_alignments.aln > ${z}_concatenated_alignments.phylip
 
+
+    """
 }
 
 
 process phylogenetic_trees {
 
-    tag "phylogentic_trees: treeID-${z} {dataset_ID}"
     publishDir "$results_path/CLUSTALW/$datasetID/phylogeneticTrees", mode: 'copy', overwrite: 'true'
 
     input:
-    set val(datasetID), val($z), file(concatenatedAlignments) from concatenatedAlignmentPhylips
+    set val(datasetID), val(z), file(concatenatedAlns) from concatenatedAlignmentPhylips
 
     output:
-    set val(datasetID), val($z), file("${z}_phlyogeneticTree.nwk") into phylogeneticTrees
+    set val(datasetID), val(z), file("phylogeneticTree.nwk") into phylogeneticTrees
 
     script:
     """
-    FastTree ${concatenatedAlignment} > ${z}_phlyogeneticTree.nwk
+    
+    FastTree ${concatenatedAlns} > phylogeneticTree.nwk
+
     """
 }
+
+
+
+/*
+ * Collect all files from paramastrapTrees from the same dataset and put them in a directory
+ *
+ *  paramastrapTrees <- set val (datasetID), file("${alignmentID}_${strapID}.nwk")
+ *
+ */
+
+paramastrapTrees
+    .collectFile() { datasetID, file ->
+        def dir = file("$baseDir/work/tmp/datasetID") 
+        dir.mkdirs()
+        [ dir / file.name, file ]
+    }
+    .set {supportTreesDirectories}
 
 
 process support_tree_lists {
@@ -324,10 +343,10 @@ process support_tree_lists {
     publishDir "$results_path/CLUSTALW/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
 
     input:
-    each x from [1,2,5,10,25,50,100,400]
-    each y from [1,2,5,10,25,50,100]
-    set val (datasetID), file (alternativeAlignmentsDir) from alternativeAlignmentsDirectories
-    set val (datasetID), file (supportTreesDir) from supportTreesDirectories
+    each x from (1,2,5,10,25,50,100,400)
+    each y from (1,2,5,10,25,50,100)
+    set val (datasetID), file (alternativeAlignmentsDir) from alternativeAlignmentDirectories_C
+    set val (datasetID), file (supportTreesDir) from supportTreesDirectories.first()
 
     output:
     set val(datasetID), file("${x}_${y}_supportFileList.txt") into supportFileLists
@@ -345,14 +364,13 @@ process support_tree_lists {
 
     while IFS=\\= read var_${x}_${y} value_${x}_${y}; do
         vars_${x}_${y}+=(\$var_${x}_${y})
-        values_${x}_${y}+=(\value_${x}_${y})
+        values_${x}_${y}+=(\$value_${x}_${y})
     done < ${x}_${y}_alignmentFileList.txt
 
     $alternativeAlignmentsDir | while read file;
     do
     if containsElement \$file \${vars_${x}_${y}[@]}
         then
-            echo "Selected: \$file for ${y} bootstraps"
             name=\${file%.fasta}
             ls -1a ${supportTreesDir}/\${name}_strap_{0..${y}}.nwk >> ${x}_${y}_supportFileList.txt
         else
@@ -374,18 +392,17 @@ process node_support {
 
     input: 
     set val(datasetID), file(concatenatedSupportTrees) from concatenatedSupportTrees
-    set val(datasetID), val(treeID), file(phlyogeneticTree) from phylogeneticTrees
-    file (referenceTree) from referenceTrees
+    set val(datasetID), val(treeID), file(phylogeneticTree) from phylogeneticTrees
 
     output:
-    set val(datasetID), val(treeID, file("nodeSupportFor_${treeID}_Tree.result") into nodeSupports
+    set val(datasetID), val(treeID), file("nodeSupportFor_${treeID}_Tree.result") into nodeSupports
 
     script:
     """
     t_coffee -other_pg seq_reformat \
              -in $phylogeneticTree \
              -in2 supportList.txt \
-             -action +tree2ns $referenceTree \
+             -action +tree2ns ${params.ref} \
              > nodeSupportFor_${treeID}_Tree.result
     """
 }
