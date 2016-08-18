@@ -1,17 +1,97 @@
-FROM pditommaso/dkrbase:1.2
-MAINTAINER Paolo Di Tommaso
+# Dockerfile for lncRNA-Annotation-nf
+# Based on debian
+############################################################
+
+# Set the base image to Ubuntu
+FROM debian:jessie
+
+# File Author / Maintainer
+MAINTAINER Evan Floden <evanfloden@gmail.com>
+
+# Install compiler and perl stuff
+RUN apt-get update && apt-get install --yes --no-install-recommends \
+ wget \
+ ed \
+ less \
+ locales \
+ vim-tiny \
+ git \
+ cmake \
+ build-essential \
+ gcc-multilib \
+ apt-utils \
+ perl \
+ python \
+ ruby \
+ expat \
+ libexpat-dev \
+ libarchive-zip-perl \
+ libdbd-mysql \
+ libdbd-mysql-perl \
+ libdbd-pgsql \
+ libgd-gd2-perl \
+ libgd2-noxpm-dev \
+ libpixman-1-0 \
+ libpixman-1-dev \
+ graphviz \
+ libxml-parser-perl \
+ libsoap-lite-perl \
+ libxml-libxml-perl \
+ libxml-dom-xpath-perl \
+ libxml-libxml-simple-perl \
+ libxml-dom-perl \
+ cpanminus \
+ && rm -rf /var/lib/apt/lists/*
 
 
-RUN apt-get update -y --fix-missing && apt-get install -y \
-    gengetopt \
-    libpng-dev
+# Install perl modules
+RUN cpanm --force CPAN::Meta \
+ XML::Parser \
+ readline \ 
+ Term::ReadKey \
+ YAML \
+ Digest::SHA \
+ Module::Build \
+ ExtUtils::MakeMaker \
+ Test::More \
+ Data::Stag \
+ Config::Simple \
+ Statistics::Lite \
+ Statistics::Descriptive \
+ Parallel::ForkManager \
+ GD \
+ GD::Graph \
+ GD::Graph::smoothlines \
+ Test::Most \
+ Algorithm::Munkres \
+ Array::Compare Clone \
+ PostScript::TextBlock \
+ SVG \
+ SVG::Graph \
+ Set::Scalar \
+ Sort::Naturally \
+ Graph \
+ GraphViz \
+ HTML::TableExtract \
+ Convert::Binary::C \
+ Math::Random \
+ Error \
+ Spreadsheet::ParseExcel \
+ XML::Parser::PerlSAX \
+ XML::SAX::Writer \
+ XML::Twig XML::Writer \
+ && rm -rf /root/.cpanm/work
 
 
-#
-# Guidance2 
-#
+# Install BioPerl last built and Guidance v2.01
+RUN cpanm -v  \
+ CJFIELDS/BioPerl-1.6.924.tar.gz \
+ && apt-get update -y --fix-missing && apt-get install -y gengetopt \
+ libpng-dev \
+ time \
+ && rm -rf /root/.cpanm/work \
+ && wget -q -O- http://guidance.tau.ac.il/ver2/guidance.v2.01.tar.gz | tar xz && cd guidance.v2.01 && make
 
-RUN cpanm -n Bio::SeqIO && wget -q -O- http://guidance.tau.ac.il/ver2/guidance.v2.01.tar.gz | tar xz && cd guidance.v2.01 && make
 ENV PERL5LIB="/guidance.v2.01/www/Selecton:/guidance.v2.01/www/bioSequence_scripts_and_constants:/guidance.v2.01/www/Guidance"
 
 #

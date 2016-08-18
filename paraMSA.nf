@@ -38,6 +38,7 @@ log.info "\n"
 alignments_num = params.alignments as int
 straps_num     = params.straps as int
 
+
 /*
  * Create a channel for input sequence files 
  */
@@ -71,7 +72,7 @@ process alignments {
     //
     
     """
-    perl \$GUIDANCE2DIR/www/Guidance/guidance.pl \
+    perl ${params.guidance2dir}/www/Guidance/guidance.pl \
         --seqFile ${datasetFile} \
         --msaProgram ${params.aligner} \
         --seqType aa \
@@ -158,7 +159,6 @@ paramastrapPhylipsDir.flatMap {  id, dir -> dir.listFiles().collect { [id, it] }
 def splitPhylip(file) {
     def chunks = Channel.create() 
     def buffer = new StringBuffer()
-    println file
     file.eachLine { line ->
       if( line ==~ /^ +\d+\s+\d+/ ) {
          if( buffer.length() ) 
@@ -286,11 +286,8 @@ process alternative_alignment_concatenate {
     do
     if containsElement \$file \${vars_${z}[@]}
         then
-            echo "Concatenating: \$file"
             name=\${file%.fasta}
             selectedAlignmentsArray+=(\$file)
-        else
-            echo "Skipping: \$file"
         fi
     done
 
@@ -331,7 +328,7 @@ process phylogenetic_trees {
 
 paramastrapTrees
     .collectFile() { datasetID, file ->
-        def dir = file("$baseDir/work/tmp/datasetID") 
+        def dir = "$baseDir/work/tmp/$datasetID" as Path
         dir.mkdirs()
         [ dir / file.name, file ]
     }
