@@ -131,6 +131,8 @@ RUN wget http://wwwuser.gwdg.de/~compbiol/data/hhsuite/releases/hhsuite-latest.t
   && make && make install
     
 ENV PATH=$PATH:/hhsuite-2.0.16/bin:/hhsuite-2.0.16/scripts     
+ENV HHLIB="/hhsuite-2.0.16"
+ENV USER=root
   
 #
 # Download T-Coffee pre-built package
