@@ -260,11 +260,11 @@ process alternative_alignment_concatenate {
 
     input:
     set val(datasetID), file(alternativeAlignmentsDir) from alternativeAlignmentDirectories_B
-    each z from (1, 2, 5, 10, 25, 50, 100)
+    each treeID from (1, 2, 5, 10, 25, 50, 100)
 
     output:
-    set val(datasetID), val(z), file("${z}_concatenated_alignments.phylip") into concatenatedAlignmentPhylips
-    set val(datasetID), val(z), file("${z}_concatenated_alignments.aln") into concatenatedAlignmentFastas
+    set val(datasetID), val(treeID), file("${treeID}_concatenated_alignments.phylip") into concatenatedAlignmentPhylips
+    set val(datasetID), val(treeID), file("${treeID}_concatenated_alignments.aln") into concatenatedAlignmentFastas
 
     script:
     //
@@ -279,69 +279,61 @@ process alternative_alignment_concatenate {
         return 1
     }
 
-    perl $baseDir/bin/hhsearch_cluster.pl ${alternativeAlignmentsDir} a3m ${z} ${z}_alignmentFileList.txt
+    perl $baseDir/bin/hhsearch_cluster.pl ${alternativeAlignmentsDir} a3m ${treeID} ${treeID}_alignmentFileList.txt
 
-    while IFS=\\= read var_${z}; do
-        vars_${z}+=(\$var_${z})
-    done < ${z}_alignmentFileList.txt
+    while IFS=\\= read var_${treeID}; do
+        vars_${treeID}+=(\$var_${treeID})
+    done < ${treeID}_alignmentFileList.txt
 
     set selectedAlignmentsArray
     declare -a selectedAlignmentsArray=('')
 
     while read file; do
-        if containsElement \$file "\${vars_${z}[@]}"
+        if containsElement \$file "\${vars_${treeID}[@]}"
             then
                 echo "Adding \$file to selectedAlignmentsArray";
                 selectedAlignmentsArray=(\${selectedAlignmentsArray[@]} ${alternativeAlignmentsDir}/\${file})
             else
-                echo "\$file not in vars_${z}";
+                echo "\$file not in vars_${treeID}";
         fi
         done <<<"\$(ls -1 ${alternativeAlignmentsDir})"
 
     echo "selected = |\${selectedAlignmentsArray[@]}|"
 
-    concatenate.pl --aln \${selectedAlignmentsArray[@]} --out ${z}_concatenated_alignments.aln
-    esl-reformat phylip ${z}_concatenated_alignments.aln > ${z}_concatenated_alignments.phylip
+    concatenate.pl --aln \${selectedAlignmentsArray[@]} --out ${treeID}_concatenated_alignments.aln
+    esl-reformat phylip ${treeID}_concatenated_alignments.aln > ${treeID}_concatenated_alignments.phylip
 
     """
 }
-
 
 process phylogenetic_trees {
 
-    publishDir "$results_path/CLUSTALW/$datasetID/phylogeneticTrees", mode: 'copy', overwrite: 'true'
+    publishDir "${params.output}/CLUSTALW/$datasetID/phylogeneticTrees", mode: 'copy', overwrite: 'true'
 
     input:
-    set val(datasetID), val(z), file(concatenatedAlns) from concatenatedAlignmentFastas
+    set val(datasetID), val(treeID), file(concatenatedAlns) from concatenatedAlignmentFastas
 
     output:
-    set val(datasetID), val(z), file("phylogeneticTree.nwk") into phylogeneticTrees
+    set val(datasetID), val(treeID), file("phylogeneticTree.nwk") into phylogeneticTrees
 
     script:
     """
-    
-    FastTree ${concatenatedAlns} > phylogeneticTree.nwk
-
+    FastTree ${concatenatedAlns} > ${datasetID}_${treeID}_phylogeneticTree.nwk
     """
 }
 
-
-
 /*
  * Collect all files from paramastrapTrees from the same dataset 
- *
  *  paramastrapTrees <- set val ($datasetID), file("${alignmentID}_${strapID}.nwk")
- *
  */
 
 paramastrapTrees
     .groupTuple()	
     .set { supportTreesFiles }
 
-
 process support_tree_lists {
     tag "tree_list: Alignments-${x} Bootstraps-${y} ${datasetID}"
-    publishDir "$results_path/CLUSTALW/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
+    publishDir "${params.output}/CLUSTALW/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
 
     input:
     each x from (1,2,5,10,25,50,100)
@@ -397,7 +389,6 @@ concatenatedSupportTrees
     .groupTuple()
     .set{concatenatedSupportTreesGrouped}
 
-
 supportCombinationsTested
     .collectFile() { item -> 
         ["${item[0]}", ">" + item[1] + '\n' ] 
@@ -405,12 +396,10 @@ supportCombinationsTested
     .map { item -> [ item.name, item ] } 
     .set {supportCombinationsTestedGrouped}
 
-
-
 process node_support {
     
     tag "node_support: ${datasetID}"
-    publishDir "$results_path/CLUSTALW/$datasetID/nodeSupport", mode: 'copy', overwrite: 'true'
+    publishDir "${params.output}/CLUSTALW/$datasetID/nodeSupport", mode: 'copy', overwrite: 'true'
 
     input: 
     set val(datasetID), file(concatenatedSupportTrees) from concatenatedSupportTreesGrouped
@@ -418,7 +407,7 @@ process node_support {
     set val(datasetID), val(treeID), file(phylogeneticTree) from phylogeneticTrees
 
     output:
-    set val(datasetID), val(treeID), file("nodeSupportFor_${datasetID}_Tree.result") into nodeSupports
+    set val(datasetID), val(treeID), file("nodeSupportFor_${datasetID}_{treeID}_Tree.result") into nodeSupports
 
     script:
     """
@@ -426,7 +415,7 @@ process node_support {
              -in $phylogeneticTree \
              -in2 ${supportFileList} \
              -action +tree2ns ${params.ref} \
-             > nodeSupportFor_${datasetID}_Tree.result
+             > nodeSupportFor_${datasetID}_{treeID}_Tree.result
     """
 }
 
