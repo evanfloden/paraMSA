@@ -11,7 +11,7 @@
 
 
 params.name          = "Concatenated MSAs and Consensus Phylogentic Trees Analysis"
-params.seq           = "$baseDir/tutorial/data/tips16_0.5_001.0400.fa"
+params.seq           = "$baseDir/tutorial/data/tips16_0.5_00{1,2}.0400.fa"
 params.ref           = "$baseDir/tutorial/data/asymmetric_0.5.unroot.tree"
 params.output        = "$baseDir/tutorial/results"
 params.straps        = 100
@@ -314,7 +314,7 @@ process phylogenetic_trees {
     set val(datasetID), val(treeID), file(concatenatedAlns) from concatenatedAlignmentFastas
 
     output:
-    set val(datasetID), val(treeID), file("phylogeneticTree.nwk") into phylogeneticTrees
+    set val(datasetID), val(treeID), file("${datasetID}_${treeID}_phylogeneticTree.nwk") into phylogeneticTrees
 
     script:
     """
@@ -322,9 +322,11 @@ process phylogenetic_trees {
     """
 }
 
+
 /*
- * Collect all files from paramastrapTrees from the same dataset 
+ *  Collect all files from paramastrapTrees from the same dataset 
  *  paramastrapTrees <- set val ($datasetID), file("${alignmentID}_${strapID}.nwk")
+ *  groupTuple -> emits [ val ($datasetID) [ file("${alignmentID}_${strapID}.nwk"), file("${alignmentID}_${strapID}.nwk") ... ] ] 
  */
 
 paramastrapTrees
@@ -339,7 +341,7 @@ process support_tree_lists {
     each x from (1,2,5,10,25,50,100)
     each y from (1,2,5,10,25,50,100)
     set val (datasetID), file (alternativeAlignmentsDir) from alternativeAlignmentDirectories_C
-    set val (datasetID), file (supportTrees) from supportTreesFiles.first()
+    set val (datasetID), file (supportTrees) from supportTreesFiles
 
     output:
     set val(datasetID), file("${x}_${y}_supportFileList.txt") into supportFileLists
@@ -389,25 +391,42 @@ concatenatedSupportTrees
     .groupTuple()
     .set{concatenatedSupportTreesGrouped}
 
+
+/*
+ *  a) Create file with list of support combinations to be tested
+ *  b) map with a datasetID and the file
+ *  c) phase to the concatenatedSupportTrees based on datasetID -> Now emits a list containing [ [datasetID, file(support_list_file)] , [ datasetID, [list of support tree files] ] ]  
+ *  d) map this to datasetID -> emits `set val(datasetID), file(support_list_file), list(support tree files)`
+ *  e) cross this with phylogeneticTrees -> emits [ 
+ *                                                  [ val(datasetID), file(support_list_file), list(support tree files) ],
+ *                                                  [ val(datasetID), val(treeID), file("${datasetID}_${treeID}_phylogeneticTree.nwk") ] 
+ *                                                ] 
+ *  f) map back to datasetID to emit [ val(datasetID), val(treeID), file("${datasetID}_${treeID}_phylogeneticTree.nwk"), file(support_list_file), file(list of support tree files)] 
+ */
+
+
 supportCombinationsTested
     .collectFile() { item -> 
         ["${item[0]}", ">" + item[1] + '\n' ] 
     }
     .map { item -> [ item.name, item ] } 
-    .set {supportCombinationsTestedGrouped}
+    .phase(concatenatedSupportTreesGrouped)
+    .map { item -> [ item[0][0], item[0][1], item[1][1] ] }
+    .cross (phylogeneticTrees)
+    .map { item -> [ item[0][0], item[1][1], item[1][2], item[0][1], item[0][2] ] }
+    .set { supportCombinationsTestedGrouped }
+
 
 process node_support {
     
-    tag "node_support: ${datasetID}"
-    publishDir "${params.output}/CLUSTALW/$datasetID/nodeSupport", mode: 'copy', overwrite: 'true'
+    tag "node_support: ${datasetID} "
+    publishDir "${params.output}/CLUSTALW/${datasetID}/nodeSupport", mode: 'copy', overwrite: 'true'
 
     input: 
-    set val(datasetID), file(concatenatedSupportTrees) from concatenatedSupportTreesGrouped
-    set val(datasetID), file(supportFileList) from supportCombinationsTestedGrouped
-    set val(datasetID), val(treeID), file(phylogeneticTree) from phylogeneticTrees
+    set val(datasetID), val(treeID), file(phylogeneticTree), file(supportFileList), file(listOfSupportTrees) from supportCombinationsTestedGrouped
 
     output:
-    set val(datasetID), val(treeID), file("nodeSupportFor_${datasetID}_{treeID}_Tree.result") into nodeSupports
+    set val(datasetID), val(treeID), file("nodeSupportFor_${datasetID}_${treeID}_Tree.result") into nodeSupports
 
     script:
     """
@@ -415,7 +434,7 @@ process node_support {
              -in $phylogeneticTree \
              -in2 ${supportFileList} \
              -action +tree2ns ${params.ref} \
-             > nodeSupportFor_${datasetID}_{treeID}_Tree.result
+             > nodeSupportFor_${datasetID}_${treeID}_Tree.result
     """
 }
 
