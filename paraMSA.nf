@@ -9,35 +9,40 @@
  * Evan Floden <evanfloden@gmail.com> 
  */
 
-
-params.name          = "Concatenated MSAs and Consensus Phylogentic Trees Analysis"
-params.seq           = "$baseDir/tutorial/data/tips16_0.5_00{1,2}.0400.fa"
-params.ref           = "$baseDir/tutorial/data/asymmetric_0.5.unroot.tree"
-params.output        = "$baseDir/tutorial/results"
-params.straps        = 100
-params.alignments    = 100
-params.aligner       = "CLUSTALW"
-
+params.name             = "tutorial_data"
+params.seq              = "$baseDir/tutorial/data/tips16_0.5_00{1,2}.0400.fa"
+params.ref              = "$baseDir/tutorial/data/asymmetric_0.5.unroot.tree"
+params.output           = "$baseDir/tutorial/results/"
+params.straps           = 16
+params.straps_list      = '1,2,4,8,16'
+params.alignments       = 16
+params.alignments_list  = '1,2,4,8,16'
+params.aligner          = "CLUSTALW"
 
 log.info "p a r a M S A ~  version 0.1"
 log.info "====================================="
-log.info "name                      : ${params.name}"
-log.info "input sequence (FASTA)    : ${params.seq}"
-log.info "reference tree (NEWICK)   : ${params.ref}"
-log.info "output (DIRECTORY)        : ${params.output}"
-log.info "straps                    : ${params.straps}"
-log.info "alignments                : ${params.alignments}"
-log.info "aligner                   : ${params.aligner}"
+log.info "name                            : ${params.name}"
+log.info "input sequence (FASTA)          : ${params.seq}"
+log.info "reference tree (NEWICK)         : ${params.ref}"
+log.info "output (DIRECTORY)              : ${params.output}"
+log.info "straps                          : ${params.straps}"
+log.info "straps list                     : ${params.straps_list}"
+log.info "alignments [multiple of 4]      : ${params.alignments}"
+log.info "alignments list                 : ${params.alignments_list}"
+log.info "aligner [CLUSTALW|MAFFT|PRANK]  : ${params.aligner}"
 log.info "\n"
-
 
 /*
  * Input parameters validation
  */
 
-alignments_num = params.alignments as int
-straps_num     = params.straps as int
+alignments_num     = params.alignments as int
+straps_num         = params.straps as int
 
+strapsList         = params.straps_list.tokenize(',')
+alignmentsList     = params.alignments_list.tokenize(',')
+
+def guidanceBootraps = alignments_num / 4 
 
 /*
  * Create a channel for input sequence files 
@@ -57,7 +62,7 @@ Channel
 process alignments {
     tag "guidance2: $datasetID"
 
-    publishDir "${params.output}/${params.aligner}/${datasetID}/alignments", mode: 'copy', overwrite: 'true'
+    publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/alignments", mode: 'copy', overwrite: 'true'
   
     input:
     set val(datasetID), file(datasetFile) from datasets
@@ -77,7 +82,7 @@ process alignments {
         --msaProgram ${params.aligner} \
         --seqType aa \
         --outDir \$PWD \
-        --bootstraps 25 \
+        --bootstraps ${guidanceBootraps} \
         --mafft mafft \
         --clustalw clustalw2 \
         --prank prank
@@ -100,7 +105,7 @@ process alignments {
 
 process create_strap_alignments {
     tag "strap alignments: $datasetID"
-    publishDir "${params.output}/${params.aligner}/${datasetID}/strap_alignments", mode: 'copy', overwrite: 'true'
+    publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/strap_alignments", mode: 'copy', overwrite: 'true'
 
     input:
     set val(datasetID), file(alternativeAlignmentsDir) from alternativeAlignmentDirectories_A
@@ -150,7 +155,6 @@ process create_strap_alignments {
 
 
 paramastrapPhylipsDir.flatMap {  id, dir -> dir.listFiles().collect { [id, it] } }
-                     .view()
                      .set { paramastrapPhylips }
 
 /*
@@ -210,8 +214,8 @@ bootstrapPhylips
 
 
 process strap_trees {
-    tag "bootstrap samples: $datasetID"
-    publishDir "${params.output}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
+    tag "bootstrap samples: ${datasetID} - ${alignmentID} - ${strapID}"
+    publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
 
     input:
     set val (datasetID), val(alignmentID), val(strapID), val(phylip) from splitPhylips
@@ -234,7 +238,7 @@ process strap_trees {
 
 process default_strap_trees {
     tag "default_strap_trees: $datasetID"
-    publishDir "${params.output}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
+    publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
 
     input:
     set val (datasetID), val(alignmentID), val(strapID), val(phylip) from splitBasePhylips
@@ -256,11 +260,11 @@ process default_strap_trees {
 }
 
 process alternative_alignment_concatenate {
-    publishDir "${params.output}/CLUSTALW/$datasetID/concatenated_alignments", mode: 'copy', overwrite: 'true'
+    publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/concatenated_alignments", mode: 'copy', overwrite: 'true'
 
     input:
     set val(datasetID), file(alternativeAlignmentsDir) from alternativeAlignmentDirectories_B
-    each treeID from (1, 2, 5, 10, 25, 50, 100)
+    each treeID from alignmentsList
 
     output:
     set val(datasetID), val(treeID), file("${treeID}_concatenated_alignments.phylip") into concatenatedAlignmentPhylips
@@ -307,8 +311,9 @@ process alternative_alignment_concatenate {
 }
 
 process phylogenetic_trees {
-
-    publishDir "${params.output}/CLUSTALW/$datasetID/phylogeneticTrees", mode: 'copy', overwrite: 'true'
+ 
+    tag "phylogenetic_trees: ${datasetID} - ${treeID}"
+    publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/phylogeneticTrees", mode: 'copy', overwrite: 'true'
 
     input:
     set val(datasetID), val(treeID), file(concatenatedAlns) from concatenatedAlignmentFastas
@@ -335,11 +340,11 @@ paramastrapTrees
 
 process support_tree_lists {
     tag "tree_list: Alignments-${x} Bootstraps-${y} ${datasetID}"
-    publishDir "${params.output}/CLUSTALW/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
+    publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
 
     input:
-    each x from (1,2,5,10,25,50,100)
-    each y from (1,2,5,10,25,50,100)
+    each x from alignmentsList
+    each y from strapsList
     set val (datasetID), file (alternativeAlignmentsDir) from alternativeAlignmentDirectories_C
     set val (datasetID), file (supportTrees) from supportTreesFiles
 
@@ -420,7 +425,7 @@ supportCombinationsTested
 process node_support {
     
     tag "node_support: ${datasetID} "
-    publishDir "${params.output}/CLUSTALW/${datasetID}/nodeSupport", mode: 'copy', overwrite: 'true'
+    publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/nodeSupport", mode: 'copy', overwrite: 'true'
 
     input: 
     set val(datasetID), val(treeID), file(phylogeneticTree), file(supportFileList), file(listOfSupportTrees) from supportCombinationsTestedGrouped
