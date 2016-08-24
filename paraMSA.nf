@@ -95,13 +95,75 @@ process alignments {
     """
 }
 
+/*
+ *  Create the default alignments using CLUSTALW2, MAFFT, PRANK and T-COFFEE
+ */
+
+process default_alignments {
+    tag "default alignments: $datasetID"
+
+    publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/default_alignments", mode: 'copy', overwrite: 'true'
+
+    input:
+    set val(datasetID), file(datasetFile) from datasets
+
+    output:
+    set val(datasetID), val("clustalw"), file ("${datasetID}_default_clustal_alignment.aln") into defaultClustalAlignments
+    set val(datasetID), val("mafft"), file ("${datasetID}_default_mafft_alignment.aln") into defaultMafftAlignments
+    set val(datasetID), val("prank"), file ("${datasetID}_default_prank_alignment.aln") into defaultPrankAlignments
+    set val(datasetID), val("tcoffee"), file ("${datasetID}_default_tcoffee_alignment.aln") into defaultTcoffeeAlignments
+   
+
+    script:
+    //
+    // Default Alignments
+    //
+
+    """
+    clustalw ${datasetFile} -type protein -outfile=${datasetID}_default_clustal_alignment.aln
+
+    mafft ${datasetFile} > ${datasetID}_default_mafft_alignment.aln
+
+    prank -d=${datasetFile} -o=${datasetID}_default_prank_alignment.aln 
+
+    t_coffee -in ${datasetFile} -outfile ${datasetID}_default_tcoffee_alignment.aln
+
+    """
+}
+
+
+defaultClustalAlignments
+    .concat(defaultMafftAlignments, defaultPrankAlignments, defaultTcoffeeAlignments)
+    .set {defaultAlignments}
+
+
+process default_phylogenetic_trees {
+    tag "default phylogenetic trees: $datasetID - $aligner"
+
+    publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/default_phylogenetic_trees", mode: 'copy', overwrite: 'true'
+
+    input:
+    set val(datasetID), val(aligner), file (alignment) from defaultAlignments
+
+    output:
+    set val(datasetID), val(aligner), file("${datasetID}_${aligner}_phylogeneticTree.nwk") into defaultPhylogeneticTrees
+ 
+    script:
+    //
+    // Phylogenetic Trees from Default Alignment
+    //
+
+    """
+    FastTree ${alignment} > ${datasetID}_${aligner}_phylogeneticTree.nwk
+
+    """
+}
 
 /*
  * Uses seqboot to create the bootstrap alignments in phylip format
  * Outputs a directory containing the bootstrapped alternative alignment replicates 
  * as well as the bootstrapped default alignment replicates
  */
-
 
 process create_strap_alignments {
     tag "strap alignments: $datasetID"
@@ -267,10 +329,12 @@ process alternative_alignment_concatenate {
     each treeID from alignmentsList
 
     output:
-    set val(datasetID), val(treeID), file("${treeID}_concatenated_alignments.phylip") into concatenatedAlignmentPhylips
-    set val(datasetID), val(treeID), file("${treeID}_concatenated_alignments.aln") into concatenatedAlignmentFastas
+    set val(datasetID), val(treeID), file("distant_${treeID}_concatenated_alignments.phylip") into distantConcatenatedAlignmentPhylips
+    set val(datasetID), val(treeID), file("distant_${treeID}_concatenated_alignments.aln") into distantConcatenatedAlignmentFastas
 
-    script:
+    set val(datasetID), val(treeID), file("random_${treeID}_concatenated_alignments.phylip") into randomConcatenatedAlignmentPhylips
+    set val(datasetID), val(treeID), file("random_${treeID}_concatenated_alignments.aln") into randomConcatenatedAlignmentFastas
+
     //
     // Concatenate Process: Generate the concatenated alignments in PHYLIP format
     // 
@@ -283,6 +347,9 @@ process alternative_alignment_concatenate {
         return 1
     }
 
+    ####
+    # Cluster the alignments for the most distant 
+    ####
     perl $baseDir/bin/hhsearch_cluster.pl ${alternativeAlignmentsDir} a3m ${treeID} ${treeID}_alignmentFileList.txt
 
     while IFS=\\= read var_${treeID}; do
@@ -300,33 +367,70 @@ process alternative_alignment_concatenate {
             else
                 echo "\$file not in vars_${treeID}";
         fi
-        done <<<"\$(ls -1 ${alternativeAlignmentsDir})"
+    done <<<"\$(ls -1 ${alternativeAlignmentsDir})"
 
     echo "selected = |\${selectedAlignmentsArray[@]}|"
 
-    concatenate.pl --aln \${selectedAlignmentsArray[@]} --out ${treeID}_concatenated_alignments.aln
-    esl-reformat phylip ${treeID}_concatenated_alignments.aln > ${treeID}_concatenated_alignments.phylip
+    concatenate.pl --aln \${selectedAlignmentsArray[@]} --out distant_${treeID}_concatenated_alignments.aln
+    esl-reformat phylip distant_${treeID}_concatenated_alignments.aln > distant_${treeID}_concatenated_alignments.phylip
+    ####
+
+
+    ####
+    # Select alignments randomally
+    ####
+    set completeAlignmentsArray
+    declare -a completeAlignmentsArray=('')
+    while read file; 
+    do
+      echo "Adding \$file to completeAlignmentsArray";
+      completeAlignmentsArray=(\${completeAlignmentsArray[@]} ${completeAlignmentsDir}/\${file})
+    done <<<"\$(ls -1 ${completeAlignmentsDir})"
+
+    set randomAlignmentsArray
+    declare -a randomAlignmentsArray=('')
+    for ((i=1; i<=$treeID; i++));
+    do
+      selectedFile=${completeAlignmentsArray[$RANDOM % ${#completeAlignmentsArray[@]}]}
+      randomAlignmentsArray=(\${randomAlignmentsArray[@]} ${randomAlignmentsDir}/\${selectedFile})
+      delete=($selectedFile)
+      completeAlignmentsArray = completeAlignmentsArray[@]/$delete 
+    done
+
+    concatenate.pl --aln \${randomAlignmentsArray[@]} --out random_${treeID}_concatenated_alignments.aln
+    esl-reformat phylip random_${treeID}_concatenated_alignments.aln > random_${treeID}_concatenated_alignments.phylip
 
     """
 }
 
-process phylogenetic_trees {
+process concatenated_phylogenetic_trees {
  
-    tag "phylogenetic_trees: ${datasetID} - ${treeID}"
+    tag "concatenated phylogenetic_trees: ${datasetID} - ${treeID}"
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/phylogeneticTrees", mode: 'copy', overwrite: 'true'
 
     input:
-    set val(datasetID), val(treeID), file(concatenatedAlns) from concatenatedAlignmentFastas
+    set val(datasetID), val(treeID), file(distantConcatenatedAlns) from distantConcatenatedAlignmentFastas
+    set val(datasetID), val(treeID), file(randomConcatenatedAlns) from randomConcatenatedAlignmentFastas
 
     output:
-    set val(datasetID), val(treeID), file("${datasetID}_${treeID}_phylogeneticTree.nwk") into phylogeneticTrees
+    set val(datasetID), val("distant_${treeID}"), file("${datasetID}_distant-${treeID}_phylogeneticTree.nwk") into distantPhylogeneticTrees
+    set val(datasetID), val("random_${treeID}"), file("${datasetID}_random-${treeID}_phylogeneticTree.nwk") into randomPhylogeneticTrees
 
     script:
     """
-    FastTree ${concatenatedAlns} > ${datasetID}_${treeID}_phylogeneticTree.nwk
+    FastTree ${distantConcatenatedAlns} > ${datasetID}_distant-${treeID}_phylogeneticTree.nwk
+    FastTree ${randomConcatenatedAlns} > ${datasetID}_random-${treeID}_phylogeneticTree.nwk
     """
 }
 
+
+/*
+ * Combine phlyogenetic trees to be grouped by ${datasetID}
+ */
+
+distantPhylogeneticTrees
+    .concat (randomPhylogeneticTrees, defaultPhylogeneticTrees)
+    .set { phylogeneticTrees }
 
 /*
  *  Collect all files from paramastrapTrees from the same dataset 
@@ -337,6 +441,9 @@ process phylogenetic_trees {
 paramastrapTrees
     .groupTuple()	
     .set { supportTreesFiles }
+
+
+
 
 process support_tree_lists {
     tag "tree_list: Alignments-${x} Bootstraps-${y} ${datasetID}"
