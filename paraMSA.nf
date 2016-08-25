@@ -47,12 +47,16 @@ def guidanceBootraps = alignments_num / 4
 /*
  * Create a channel for input sequence files 
  */
- 
+
+
+
 Channel
     .fromPath( params.seq )
     .ifEmpty { error "Cannot find any input sequence files matching: ${params.seq}" }
     .map { file -> tuple( file.baseName, file ) }
-    .set { datasets }
+    .into { datasetsA; datasetsB }
+
+
 
 /*
  * Generate the alternative alignments using guidance2
@@ -65,11 +69,10 @@ process alignments {
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/alignments", mode: 'copy', overwrite: 'true'
   
     input:
-    set val(datasetID), file(datasetFile) from datasets
+    set val(datasetID), file(datasetFile) from datasetsA
 
     output:
     set val(datasetID), file ("alternativeMSA") into alternativeAlignmentDirectories_A, alternativeAlignmentDirectories_B,  alternativeAlignmentDirectories_C
-    set val(datasetID), file ("default_alignment.aln") into defaultAlignments
   
     script:
     //
@@ -87,8 +90,6 @@ process alignments {
         --clustalw clustalw2 \
         --prank prank
 
-    cp MSA.${params.aligner}.aln.With_Names default_alignment.aln
-
     mkdir \$PWD/alternativeMSA
     tar -zxf MSA.${params.aligner}.Guidance2_AlternativeMSA.tar.gz -C alternativeMSA
 
@@ -105,7 +106,7 @@ process default_alignments {
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/default_alignments", mode: 'copy', overwrite: 'true'
 
     input:
-    set val(datasetID), file(datasetFile) from datasets
+    set val(datasetID), file(datasetFile) from datasetsB
 
     output:
     set val(datasetID), val("clustalw"), file ("${datasetID}_default_clustal_alignment.aln") into defaultClustalAlignments
@@ -120,11 +121,12 @@ process default_alignments {
     //
 
     """
-    clustalw ${datasetFile} -type protein -outfile=${datasetID}_default_clustal_alignment.aln
+    clustalw2 ${datasetFile} -outfile=${datasetID}_default_clustal_alignment.aln
 
     mafft ${datasetFile} > ${datasetID}_default_mafft_alignment.aln
 
-    prank -d=${datasetFile} -o=${datasetID}_default_prank_alignment.aln 
+    prank -d=${datasetFile}
+    mv output.best.fas ${datasetID}_default_prank_alignment.aln 
 
     t_coffee -in ${datasetFile} -outfile ${datasetID}_default_tcoffee_alignment.aln
 
@@ -134,8 +136,9 @@ process default_alignments {
 
 defaultClustalAlignments
     .concat(defaultMafftAlignments, defaultPrankAlignments, defaultTcoffeeAlignments)
-    .set {defaultAlignments}
-
+    .set { defaultAlignments }
+   
+defaultAlignments.into { defaultAlignmentsA; defaultAlignmentsB }
 
 process default_phylogenetic_trees {
     tag "default phylogenetic trees: $datasetID - $aligner"
@@ -143,7 +146,7 @@ process default_phylogenetic_trees {
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/default_phylogenetic_trees", mode: 'copy', overwrite: 'true'
 
     input:
-    set val(datasetID), val(aligner), file (alignment) from defaultAlignments
+    set val(datasetID), val(aligner), file (alignment) from defaultAlignmentsA
 
     output:
     set val(datasetID), val(aligner), file("${datasetID}_${aligner}_phylogeneticTree.nwk") into defaultPhylogeneticTrees
@@ -171,18 +174,14 @@ process create_strap_alignments {
 
     input:
     set val(datasetID), file(alternativeAlignmentsDir) from alternativeAlignmentDirectories_A
-    set val(datasetID), file(defaultAlignment) from defaultAlignments
-
 
     output:
     set val (datasetID), file("paramastrap_phylips") into paramastrapPhylipsDir
-    set val (datasetID), file("bootstrap.phylip") into bootstrapPhylips
 
     script:
     //
     // This task generates strap alignments in phylip format.
     // For each alternative alignment, ${straps_num} strap alignments are generated.
-    // The base (default) alignment is also bootstrapped 
     //
 
     """
@@ -208,10 +207,6 @@ process create_strap_alignments {
     mkdir paramastrap_phylips
 
     mv *_strap.phylip paramastrap_phylips/.
-
-    esl-reformat phylip ${defaultAlignment} > base.phylip
-    echo -e "base.phylip\nR\n\${straps}\nY\n\$seed\n" | seqboot
-    mv outfile bootstrap.phylip
     """
 }
 
@@ -258,17 +253,6 @@ paramastrapPhylips
      }
      .set { splitPhylips  }  
 
-bootstrapPhylips
-    .flatMap { set ->
-        def datasetID = set[0]
-        def alignmentID = set[1].baseName
-        def file =  set[1]
-        def strapID = 0
-        splitPhylip(file).collect{ phylip -> tuple(datasetID, alignmentID, strapID++, phylip) }
-     }
-     .set { splitBasePhylips  }
-
-
 /*
  * Create bootstrap trees from each boottrap alignment replicate
  * Output both the NEWICK tree and the bootstrap alignment used to generate it
@@ -283,8 +267,8 @@ process strap_trees {
     set val (datasetID), val(alignmentID), val(strapID), val(phylip) from splitPhylips
     
     output:
-    set val (datasetID), file("${alignmentID}_${strapID}.nwk") into paramastrapTrees
-    set val (datasetID), file("${alignmentID}_${strapID}.phylip") into paramastrapSplitPhylips
+    set val (datasetID), val(alignmentID), val(strapID), file("${datasetID}_${alignmentID}_${strapID}.nwk") into paramastrapTrees
+    set val (datasetID), val(alignmentID), val(strapID), file("${datasetID}_{alignmentID}_${strapID}.phylip") into paramastrapSplitPhylips
 
     script:
     //
@@ -292,31 +276,70 @@ process strap_trees {
     //
 
     """
-    echo "${phylip}" | tee ${alignmentID}_${strapID}.phylip  
-    FastTree ${alignmentID}_${strapID}.phylip > ${alignmentID}_${strapID}.nwk
+    echo "${phylip}" | tee ${datasetID}_{alignmentID}_${strapID}.phylip  
+    FastTree ${datasetID}{alignmentID}_${strapID}.phylip > ${datasetID}_${alignmentID}_${strapID}.nwk
 
     """
 }
 
-process default_strap_trees {
+
+process create_default_alignment_straps {
+
+    tag "default phylogenetic trees: $datasetID - $aligner"
+
+    publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/default_phylogenetic_trees", mode: 'copy', overwrite: 'true'
+
+    input:
+    set val(datasetID), val(aligner), file (alignment) from defaultAlignmentsB
+
+    output:
+    set val(datasetID), val(aligner), file("${datasetID}_${aligner}_default_bootstraps.phylip") into defaultBootstrapPhylips
+
+    script:
+    //
+    // This task generates strap alignments in phylip format.
+    // For each deafault alignment, ${straps_num} strap alignments are generated.
+    //
+
+    """
+    seed=4533
+    straps=\$((${straps_num} + 1))
+    esl-reformat phylip ${alignment} > ${aligner}_default.phylip
+    echo -e "${aligner}_default.phylip\nR\n\${straps}\nY\n\$seed\n" | seqboot
+    mv outfile ${datasetID}_${aligner}_default_bootstraps.phylip
+
+    """
+}
+
+defaultBootstrapPhylips
+    .flatMap { set ->
+        def datasetID = set[0]
+        def aligner = set[1]
+        def file =  set[2]
+        def strapID = 0
+        splitPhylip(file).collect{ phylip -> tuple(datasetID, aligner, strapID++, phylip) }
+     }
+     .set { defaultBootstrapPhylipsSplit }
+
+process create_default_strap_trees {
     tag "default_strap_trees: $datasetID"
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
 
     input:
-    set val (datasetID), val(alignmentID), val(strapID), val(phylip) from splitBasePhylips
+    set val (datasetID), val(aligner), val(strapID), val(phylip) from defaultBootstrapPhylipsSplit
 
     output:
-    set val (datasetID), file("${alignmentID}_${strapID}.nwk") into paramastrapBaseTrees
-    set val (datasetID), file("${alignmentID}_${strapID}.phylip") into paramastrapBaseSplitPhylips
+    set val (datasetID), val(aligner), val(strapID), file("${datasetID}_${aligner}_${strapID}.nwk") into defaultAlignmentsBootstrapTrees
+    set val (datasetID), val(aligner), val(strapID), file("${datasetID}_${aligner}_${strapID}.phylip") into defaultAlignmentsBootstrapPhylips
 
     script:
     //
-    // Generate Strap Trees: Generate strap trees in Newick format
+    // Generate Strap Trees: Generate strap trees in Newick format for the default alignment bootstraps
     //
 
     """
-    echo "${phylip}" | tee ${alignmentID}_${strapID}.phylip
-    FastTree ${alignmentID}_${strapID}.phylip > ${alignmentID}_${strapID}.nwk
+    echo "${phylip}" | tee ${datasetID}_${aligner}_${strapID}.phylip
+    FastTree ${datasetID}_${aligner}_${strapID}.phylip > ${datasetID}_${aligner}_${strapID}.nwk
 
     """
 }
@@ -377,24 +400,27 @@ process alternative_alignment_concatenate {
 
 
     ####
-    # Select alignments randomally
+    # Select alignments randomly
     ####
     set completeAlignmentsArray
     declare -a completeAlignmentsArray=('')
     while read file; 
     do
       echo "Adding \$file to completeAlignmentsArray";
-      completeAlignmentsArray=(\${completeAlignmentsArray[@]} ${completeAlignmentsDir}/\${file})
-    done <<<"\$(ls -1 ${completeAlignmentsDir})"
+      completeAlignmentsArray=(\${completeAlignmentsArray[@]} ${alternativeAlignmentsDir}/\${file})
+    done <<<"\$(ls -1 ${alternativeAlignmentsDir})"
 
     set randomAlignmentsArray
     declare -a randomAlignmentsArray=('')
+    set delete
+    declare -a delete=('')
+
     for ((i=1; i<=$treeID; i++));
     do
-      selectedFile=${completeAlignmentsArray[$RANDOM % ${#completeAlignmentsArray[@]}]}
-      randomAlignmentsArray=(\${randomAlignmentsArray[@]} ${randomAlignmentsDir}/\${selectedFile})
-      delete=($selectedFile)
-      completeAlignmentsArray = completeAlignmentsArray[@]/$delete 
+      selectedFile=\${completeAlignmentsArray[\$RANDOM % \${#completeAlignmentsArray[@]}]}
+      randomAlignmentsArray=(\${randomAlignmentsArray[@]} \${selectedFile})
+      delete=(\$selectedFile)
+      completeAlignmentsArray=completeAlignmentsArray[@]\\\$delete 
     done
 
     concatenate.pl --aln \${randomAlignmentsArray[@]} --out random_${treeID}_concatenated_alignments.aln
