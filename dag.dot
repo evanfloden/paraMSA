@@ -1,0 +1,190 @@
+digraph dag {
+p0 [shape=point,label="",fixedsize=true,width=0.1,xlabel="Channel.fromPath"];
+p1 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="ifEmpty"];
+p0 -> p1;
+
+p1 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="ifEmpty"];
+p2 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="map"];
+p1 -> p2;
+
+p2 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="map"];
+p3 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="into"];
+p2 -> p3;
+
+p3 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="into"];
+p4 [label="alignments"];
+p3 -> p4 [label="datasetsA"];
+
+p3 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="into"];
+p5 [label="default_alignments"];
+p3 -> p5 [label="datasetsB"];
+
+p4 [label="alignments"];
+p9 [label="create_strap_alignments"];
+p4 -> p9 [label="alternativeAlignmentDirectories_A"];
+
+p4 [label="alignments"];
+p20 [label="alternative_alignment_concatenate"];
+p4 -> p20 [label="alternativeAlignmentDirectories_B"];
+
+p4 [label="alignments"];
+p28 [label="support_tree_lists"];
+p4 -> p28 [label="alternativeAlignmentDirectories_C"];
+
+p5 [label="default_alignments"];
+p6 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="concat"];
+p5 -> p6 [label="defaultClustalAlignments"];
+
+p5 [label="default_alignments"];
+p6 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="concat"];
+p5 -> p6 [label="defaultMafftAlignments"];
+
+p5 [label="default_alignments"];
+p6 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="concat"];
+p5 -> p6 [label="defaultPrankAlignments"];
+
+p5 [label="default_alignments"];
+p6 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="concat"];
+p5 -> p6 [label="defaultTcoffeeAlignments"];
+
+p6 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="concat"];
+p7 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="into"];
+p6 -> p7 [label="defaultAlignments"];
+
+p7 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="into"];
+p8 [label="default_phylogenetic_trees"];
+p7 -> p8 [label="defaultAlignmentsA"];
+
+p7 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="into"];
+p14 [label="create_default_alignment_straps"];
+p7 -> p14 [label="defaultAlignmentsB"];
+
+p8 [label="default_phylogenetic_trees"];
+p24 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="concat"];
+p8 -> p24 [label="defaultPhylogeneticTrees"];
+
+p9 [label="create_strap_alignments"];
+p10 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="flatMap"];
+p9 -> p10 [label="paramastrapPhylipsDir"];
+
+p10 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="flatMap"];
+p11 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="flatMap"];
+p10 -> p11 [label="paramastrapPhylips"];
+
+p11 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="flatMap"];
+p12 [label="strap_trees"];
+p11 -> p12 [label="splitPhylips"];
+
+p12 [label="strap_trees"];
+p25 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="groupTuple"];
+p12 -> p25 [label="paramastrapTrees"];
+
+p12 [label="strap_trees"];
+p13 [shape=point];
+p12 -> p13 [label="paramastrapSplitPhylips"];
+
+p14 [label="create_default_alignment_straps"];
+p15 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="flatMap"];
+p14 -> p15 [label="defaultBootstrapPhylips"];
+
+p15 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="flatMap"];
+p16 [label="create_default_strap_trees"];
+p15 -> p16 [label="defaultBootstrapPhylipsSplit"];
+
+p16 [label="create_default_strap_trees"];
+p18 [shape=point];
+p16 -> p18 [label="defaultAlignmentsBootstrapTrees"];
+
+p16 [label="create_default_strap_trees"];
+p17 [shape=point];
+p16 -> p17 [label="defaultAlignmentsBootstrapPhylips"];
+
+p19 [shape=point,label="",fixedsize=true,width=0.1];
+p20 [label="alternative_alignment_concatenate"];
+p19 -> p20 [label="treeID"];
+
+p20 [label="alternative_alignment_concatenate"];
+p22 [shape=point];
+p20 -> p22 [label="distantConcatenatedAlignmentPhylips"];
+
+p20 [label="alternative_alignment_concatenate"];
+p23 [label="concatenated_phylogenetic_trees"];
+p20 -> p23 [label="distantConcatenatedAlignmentFastas"];
+
+p20 [label="alternative_alignment_concatenate"];
+p21 [shape=point];
+p20 -> p21 [label="randomConcatenatedAlignmentPhylips"];
+
+p20 [label="alternative_alignment_concatenate"];
+p23 [label="concatenated_phylogenetic_trees"];
+p20 -> p23 [label="randomConcatenatedAlignmentFastas"];
+
+p23 [label="concatenated_phylogenetic_trees"];
+p24 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="concat"];
+p23 -> p24 [label="distantPhylogeneticTrees"];
+
+p23 [label="concatenated_phylogenetic_trees"];
+p24 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="concat"];
+p23 -> p24 [label="randomPhylogeneticTrees"];
+
+p24 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="concat"];
+p35 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="cross"];
+p24 -> p35 [label="phylogeneticTrees"];
+
+p25 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="groupTuple"];
+p28 [label="support_tree_lists"];
+p25 -> p28 [label="supportTreesFiles"];
+
+p26 [shape=point,label="",fixedsize=true,width=0.1];
+p28 [label="support_tree_lists"];
+p26 -> p28 [label="x"];
+
+p27 [shape=point,label="",fixedsize=true,width=0.1];
+p28 [label="support_tree_lists"];
+p27 -> p28 [label="y"];
+
+p28 [label="support_tree_lists"];
+p29 [shape=point];
+p28 -> p29 [label="supportFileLists"];
+
+p28 [label="support_tree_lists"];
+p30 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="groupTuple"];
+p28 -> p30 [label="concatenatedSupportTrees"];
+
+p28 [label="support_tree_lists"];
+p31 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="collectFile"];
+p28 -> p31 [label="supportCombinationsTested"];
+
+p30 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="groupTuple"];
+p33 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="phase"];
+p30 -> p33 [label="concatenatedSupportTreesGrouped"];
+
+p31 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="collectFile"];
+p32 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="map"];
+p31 -> p32;
+
+p32 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="map"];
+p33 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="phase"];
+p32 -> p33;
+
+p33 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="phase"];
+p34 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="map"];
+p33 -> p34;
+
+p34 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="map"];
+p35 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="cross"];
+p34 -> p35;
+
+p35 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="cross"];
+p36 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="map"];
+p35 -> p36;
+
+p36 [shape=circle,label="",fixedsize=true,width=0.1,xlabel="map"];
+p37 [label="node_support"];
+p36 -> p37 [label="supportCombinationsTestedGrouped"];
+
+p37 [label="node_support"];
+p38 [shape=point];
+p37 -> p38 [label="nodeSupports"];
+
+}

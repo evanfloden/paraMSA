@@ -109,10 +109,10 @@ process default_alignments {
     set val(datasetID), file(datasetFile) from datasetsB
 
     output:
-    set val(datasetID), val("clustalw"), file ("${datasetID}_default_clustal_alignment.aln") into defaultClustalAlignments
-    set val(datasetID), val("mafft"), file ("${datasetID}_default_mafft_alignment.aln") into defaultMafftAlignments
-    set val(datasetID), val("prank"), file ("${datasetID}_default_prank_alignment.aln") into defaultPrankAlignments
-    set val(datasetID), val("tcoffee"), file ("${datasetID}_default_tcoffee_alignment.aln") into defaultTcoffeeAlignments
+    set val(datasetID), val("clustalw"), file ("${datasetID}_default_clustal_alignment.fa") into defaultClustalAlignments
+    set val(datasetID), val("mafft"), file ("${datasetID}_default_mafft_alignment.fa") into defaultMafftAlignments
+    set val(datasetID), val("prank"), file ("${datasetID}_default_prank_alignment.fa") into defaultPrankAlignments
+    set val(datasetID), val("tcoffee"), file ("${datasetID}_default_tcoffee_alignment.fa") into defaultTcoffeeAlignments
    
 
     script:
@@ -122,13 +122,17 @@ process default_alignments {
 
     """
     clustalw2 ${datasetFile} -outfile=${datasetID}_default_clustal_alignment.aln
+    esl-reformat afa ${datasetID}_default_clustal_alignment.aln > ${datasetID}_default_clustal_alignment.fa
 
     mafft ${datasetFile} > ${datasetID}_default_mafft_alignment.aln
+    esl-reformat afa ${datasetID}_default_mafft_alignment.aln > ${datasetID}_default_mafft_alignment.fa
 
     prank -d=${datasetFile}
     mv output.best.fas ${datasetID}_default_prank_alignment.aln 
+    esl-reformat afa ${datasetID}_default_prank_alignment.aln > ${datasetID}_default_prank_alignment.fa
 
     t_coffee -in ${datasetFile} -outfile ${datasetID}_default_tcoffee_alignment.aln
+    esl-reformat afa ${datasetID}_default_prank_alignment.aln >${datasetID}_default_tcoffee_alignment.fa
 
     """
 }
@@ -267,8 +271,8 @@ process strap_trees {
     set val (datasetID), val(alignmentID), val(strapID), val(phylip) from splitPhylips
     
     output:
-    set val (datasetID), val(alignmentID), val(strapID), file("${datasetID}_${alignmentID}_${strapID}.nwk") into paramastrapTrees
-    set val (datasetID), val(alignmentID), val(strapID), file("${datasetID}_{alignmentID}_${strapID}.phylip") into paramastrapSplitPhylips
+    set val (datasetID), file("${alignmentID}_${strapID}.nwk") into paramastrapTrees
+    set val (datasetID), file("${datasetID}_${alignmentID}_${strapID}.phylip") into paramastrapSplitPhylips
 
     script:
     //
@@ -276,8 +280,8 @@ process strap_trees {
     //
 
     """
-    echo "${phylip}" | tee ${datasetID}_{alignmentID}_${strapID}.phylip  
-    FastTree ${datasetID}{alignmentID}_${strapID}.phylip > ${datasetID}_${alignmentID}_${strapID}.nwk
+    echo "${phylip}" | tee ${datasetID}_${alignmentID}_${strapID}.phylip  
+    FastTree ${datasetID}_${alignmentID}_${strapID}.phylip > ${alignmentID}_${strapID}.nwk
 
     """
 }
@@ -460,14 +464,12 @@ distantPhylogeneticTrees
 
 /*
  *  Collect all files from paramastrapTrees from the same dataset 
- *  paramastrapTrees <- set val ($datasetID), file("${alignmentID}_${strapID}.nwk")
  *  groupTuple -> emits [ val ($datasetID) [ file("${alignmentID}_${strapID}.nwk"), file("${alignmentID}_${strapID}.nwk") ... ] ] 
  */
 
 paramastrapTrees
     .groupTuple()	
     .set { supportTreesFiles }
-
 
 
 
@@ -557,7 +559,7 @@ supportCombinationsTested
 
 process node_support {
     
-    tag "node_support: ${datasetID} "
+    tag "node_support: ${datasetID} - ${treeID}"
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/nodeSupport", mode: 'copy', overwrite: 'true'
 
     input: 
