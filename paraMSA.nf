@@ -122,16 +122,17 @@ process default_alignments {
 
     """
     clustalw2 ${datasetFile} -outfile=${datasetID}_default_clustal_alignment.aln
-    esl-reformat afa ${datasetID}_default_clustal_alignment.aln > ${datasetID}_default_clustal_alignment.fa
 
     mafft ${datasetFile} > ${datasetID}_default_mafft_alignment.aln
-    esl-reformat afa ${datasetID}_default_mafft_alignment.aln > ${datasetID}_default_mafft_alignment.fa
 
     prank -d=${datasetFile}
-    mv output.best.fas ${datasetID}_default_prank_alignment.aln 
-    esl-reformat afa ${datasetID}_default_prank_alignment.aln > ${datasetID}_default_prank_alignment.fa
+    mv output.best.fas ${datasetID}_default_prank_alignment.aln
 
     t_coffee -in ${datasetFile} -outfile ${datasetID}_default_tcoffee_alignment.aln
+    
+    esl-reformat afa ${datasetID}_default_clustal_alignment.aln > ${datasetID}_default_clustal_alignment.fa
+    esl-reformat afa ${datasetID}_default_mafft_alignment.aln > ${datasetID}_default_mafft_alignment.fa
+    esl-reformat afa ${datasetID}_default_prank_alignment.aln > ${datasetID}_default_prank_alignment.fa
     esl-reformat afa ${datasetID}_default_prank_alignment.aln >${datasetID}_default_tcoffee_alignment.fa
 
     """

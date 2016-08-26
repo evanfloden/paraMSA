@@ -155,9 +155,7 @@ RUN wget -q http://mafft.cbrc.jp/alignment/software/mafft-7.130-with-extensions-
 #
 # HMMER for esl-suite of tools
 #
-RUN wget -q http://eddylab.org/software/hmmer3/3.1b2/hmmer-3.1b2.tar.gz && \
-  tar xf hmmer-3.1b2.tar.gz && \
-  cd hmmer-3.1b2 && \
-  ./configure && make && make check && make install
-
-ENV PATH=$PATH:/hmmer-3.1b2/easel/miniapps
+RUN wget -q http://eddylab.org/software/hmmer3/3.1b2/hmmer-3.1b2-linux-intel-x86_64.tar.gz && \
+  tar xf hmmer-3.1b2-linux-intel-x86_64.tar.gz
+  
+ENV PATH=$PATH:/hmmer-3.1b2-linux-intel-x86_64/binaries
