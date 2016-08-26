@@ -142,7 +142,7 @@ RUN wget -q http://www.tcoffee.org/Packages/Stable/Version_11.00.8cbe486/linux/T
   mv T-COFFEE_installer_Version_11.00.8cbe486_linux_x64 /opt/tcoffee && \
   rm -rf T-COFFEE_installer_Version_11.00.8cbe486_linux_x64.tar.gz
     
-ENV PATH=$PATH:/opt/tcoffee
+ENV PATH=$PATH:/opt/tcoffee/bin
 
 #  
 RUN wget -q http://mafft.cbrc.jp/alignment/software/mafft-7.130-with-extensions-src.tgz -O- \
@@ -151,3 +151,13 @@ RUN wget -q http://mafft.cbrc.jp/alignment/software/mafft-7.130-with-extensions-
   make && make install && \
   cd $HOME && \
   rm -rf mafft-7.130-with-extensions
+
+#
+# HMMER for esl-suite of tools
+#
+RUN wget -q http://eddylab.org/software/hmmer3/3.1b2/hmmer-3.1b2.tar.gz && \
+  tar xf hmmer-3.1b2.tar.gz && \
+  cd hmmer-3.1b2 && \
+  ./configure && make && make check && make install
+
+ENV PATH=$PATH:/hmmer-3.1b2/easel/miniapps
