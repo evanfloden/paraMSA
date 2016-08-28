@@ -464,14 +464,57 @@ distantPhylogeneticTrees
     .set { phylogeneticTrees }
 
 /*
- *  Collect all files from paramastrapTrees from the same dataset 
+ *  Collect all files from paramastrapTrees and the bootstrap trees from the same dataset 
  *  groupTuple -> emits [ val ($datasetID) [ file("${alignmentID}_${strapID}.nwk"), file("${alignmentID}_${strapID}.nwk") ... ] ] 
  */
+
+
+/*
+ * defaultAlignmentsBootstrapTrees <- set val (datasetID), val(aligner), val(strapID), file("${datasetID}_${aligner}_${strapID}.nwk")
+ * defaultAlignmentBootstrapFiles <- set val (datasetID), file("${datasetID}_${aligner}_${strapID}.nwk") 
+ *
+ * paramastrapTrees <- set val (datasetID), file("${alignmentID}_${strapID}.nwk")
+ */
+
+defaultAlignmentsBootstrapTrees.into { defaultAlignmentsBootstrapTreesA; defaultAlignmentsBootstrapTreesB }
+
+
+defaultAlignmentsBootstrapTreesA
+    .map {item -> item[0], item[3]}
+    .groupTuple()
+    .defaultAlignmentBootstrapFiles
+
+
+process default_support_tree_lists {
+    tag "default_tree_list: Alignments-${x} Bootstraps-${y} ${datasetID}"
+    publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
+
+    input:
+    each y from ('clustalw', 'mafft', 'prank', 'tcoffee') 
+    set val (datasetID), file (defaultSupportTreesFiles) from defaultAlignmentBootstrapFiles
+
+    output:
+    set val (datasetID), file("${y}_supportFileList.txt") into defaultSupportFileLists
+    set val (datasetID), file("${y}_concatenatedSupportTrees.nwk") into defaultConcatenatedSupportTrees
+    set val (datasetID), val("${y}_concatenatedSupportTrees.nwk") into defaultSupportCombinationsTested
+
+    script:
+    """
+    for ((i=0; i<$straps_num; i++)); do
+       ls -1a ${datasetID}_${aligner}_\${i}.nwk >> ${y}_supportFileList.txt
+    done
+
+    while read p; do
+      cat \$p >> ${y}_concatenatedSupportTrees.nwk
+    done <${y}_supportFileList.txt
+    """
+
+}
+
 
 paramastrapTrees
     .groupTuple()	
     .set { supportTreesFiles }
-
 
 
 process support_tree_lists {
@@ -528,7 +571,13 @@ process support_tree_lists {
     """
 }
 
+    set val (datasetID), file("${y}_supportFileList.txt") into defaultSupportFileLists
+    set val (datasetID), file("${y}_concatenatedSupportTrees.nwk") into defaultConcatenatedSupportTrees
+    set val (datasetID), val("${y}_concatenatedSupportTrees.nwk") into defaultSupportCombinationsTested
+
+
 concatenatedSupportTrees
+    .concat (defaultConcatenatedSupportTrees)
     .groupTuple()
     .set{concatenatedSupportTreesGrouped}
 
@@ -547,6 +596,7 @@ concatenatedSupportTrees
 
 
 supportCombinationsTested
+    .concat(defaultSupportCombinationsTested)
     .collectFile() { item -> 
         ["${item[0]}", ">" + item[1] + '\n' ] 
     }
