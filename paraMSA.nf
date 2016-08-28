@@ -480,9 +480,9 @@ defaultAlignmentsBootstrapTrees.into { defaultAlignmentsBootstrapTreesA; default
 
 
 defaultAlignmentsBootstrapTreesA
-    .map {item -> item[0], item[3]}
+    .map {item -> [ item[0], item[3] ] }
     .groupTuple()
-    .defaultAlignmentBootstrapFiles
+    .set { defaultAlignmentBootstrapFiles }
 
 
 process default_support_tree_lists {
@@ -501,7 +501,7 @@ process default_support_tree_lists {
     script:
     """
     for ((i=0; i<$straps_num; i++)); do
-       ls -1a ${datasetID}_${aligner}_\${i}.nwk >> ${y}_supportFileList.txt
+       ls -1a ${datasetID}_${y}_\${i}.nwk >> ${y}_supportFileList.txt
     done
 
     while read p; do
@@ -518,7 +518,7 @@ paramastrapTrees
 
 
 process support_tree_lists {
-    tag "tree_list: Alignments-${x} Bootstraps-${y} ${datasetID}"
+    tag "distant and random tree_list: Alignments-${x} Bootstraps-${y} ${datasetID}"
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
 
     input:
@@ -528,9 +528,12 @@ process support_tree_lists {
     set val (datasetID), file (supportTrees) from supportTreesFiles
 
     output:
-    set val(datasetID), file("${x}_${y}_supportFileList.txt") into supportFileLists
-    set val(datasetID), file("${x}_${y}_concatenatedSupportTrees.nwk") into concatenatedSupportTrees
-    set val (datasetID), val("${x}_${y}_concatenatedSupportTrees.nwk") into supportCombinationsTested
+    set val(datasetID), file("distant_${x}_${y}_supportFileList.txt") into distantSupportFileLists
+    set val(datasetID), file("distant_${x}_${y}_concatenatedSupportTrees.nwk") into distantConcatenatedSupportTrees
+    set val (datasetID), val("distant_${x}_${y}_concatenatedSupportTrees.nwk") into distantSupportCombinationsTested
+    set val(datasetID), file("random_${x}_${y}_supportFileList.txt") into randomSupportFileLists
+    set val(datasetID), file("random_${x}_${y}_concatenatedSupportTrees.nwk") into randomConcatenatedSupportTrees
+    set val (datasetID), val("random_${x}_${y}_concatenatedSupportTrees.nwk") into randomSupportCombinationsTested
 
     script:
     """
@@ -540,11 +543,16 @@ process support_tree_lists {
         return 1
     }
 
-    perl $baseDir/bin/hhsearch_cluster.pl ${alternativeAlignmentsDir} a3m $x ${x}_${y}_alignmentFileList.txt
+
+    ####
+    # Select Most Distant Alignments and Use 
+    ####
+
+    perl $baseDir/bin/hhsearch_cluster.pl ${alternativeAlignmentsDir} a3m $x distant_${x}_${y}_alignmentFileList.txt
 
     while IFS=\\= read var_${x}_${y} value_${x}_${y}; do
         vars_${x}_${y}+=(\$var_${x}_${y})
-    done < ${x}_${y}_alignmentFileList.txt
+    done < distant_${x}_${y}_alignmentFileList.txt
 
     declare -i w
     w=\$((${y} - 1))
@@ -554,30 +562,75 @@ process support_tree_lists {
                 name=\${file%.fasta}
                 if (( w > 0 ))
                   then 
-                    eval ls -1a \${name}_strap_{0..\${w}}.nwk >> ${x}_${y}_supportFileList.txt
+                    eval ls -1a \${name}_strap_{0..\${w}}.nwk >> distant_${x}_${y}_supportFileList.txt
                   else
-                    ls -1a \${name}_strap_0.nwk >> ${x}_${y}_supportFileList.txt
+                    ls -1a \${name}_strap_0.nwk >> distant_${x}_${y}_supportFileList.txt
                 fi
-                echo "Adding \$file to supportFileList.txt";
+                echo "Adding \$file to distant supportFileList.txt";
             else
                 echo "\$file not in vars_${x}_${y}";
         fi
     done <<<"\$(ls -1 ${alternativeAlignmentsDir})"
 
     while read p; do
-      cat \$p >> ${x}_${y}_concatenatedSupportTrees.nwk
-    done <${x}_${y}_supportFileList.txt
+      cat \$p >> distant_${x}_${y}_concatenatedSupportTrees.nwk
+    done <distant_${x}_${y}_supportFileList.txt
+
+    ####
+    # Select Random Alignments and Use Them
+    ####
+
+    set completeAlignmentsArray
+    declare -a completeAlignmentsArray=('')
+    while read file;
+    do
+      echo "Adding \$file to completeAlignmentsArray";
+      completeAlignmentsArray=(\${completeAlignmentsArray[@]} ${alternativeAlignmentsDir}/\${file})
+    done <<<"\$(ls -1 ${alternativeAlignmentsDir})"
+
+    set randomAlignmentsArray
+    declare -a randomAlignmentsArray=('')
+    set delete
+    declare -a delete=('')
+
+    for ((i=1; i<=$x; i++));
+    do
+      selectedFile=\${completeAlignmentsArray[\$RANDOM % \${#completeAlignmentsArray[@]}]}
+      selectedFileMinusPath=\${selectedFile##*/}
+      randomAlignmentsArray=(\${randomAlignmentsArray[@]} \${selectedFileMinusPath})
+      delete=(\$selectedFile)
+      completeAlignmentsArray=completeAlignmentsArray[@]\\\$delete
+      echo "added \${selectedFileMinusPath} to randomAlignmentsArray"
+    done
+
+
+    declare -i j
+    j=\$((${y} - 1))
+    while read file; do
+        if containsElement \$file "\${randomAlignmentsArray[@]}"
+            then
+                name=\${file%.fasta}
+                if (( j > 0 ))
+                  then
+                    eval ls -1a \${name}_strap_{0..\${j}}.nwk >> random_${x}_${y}_supportFileList.txt
+                  else
+                    ls -1a \${name}_strap_0.nwk >> random_${x}_${y}_supportFileList.txt
+                fi
+                echo "Adding \$file to random supportFileList.txt";
+            else
+                echo "\$file not in randomAlignmentsArray";
+        fi
+    done <<<"\$(ls -1 ${alternativeAlignmentsDir})"
+
+    while read p; do
+      cat \$p >> random_${x}_${y}_concatenatedSupportTrees.nwk
+    done <random_${x}_${y}_supportFileList.txt
 
     """
 }
 
-    set val (datasetID), file("${y}_supportFileList.txt") into defaultSupportFileLists
-    set val (datasetID), file("${y}_concatenatedSupportTrees.nwk") into defaultConcatenatedSupportTrees
-    set val (datasetID), val("${y}_concatenatedSupportTrees.nwk") into defaultSupportCombinationsTested
-
-
-concatenatedSupportTrees
-    .concat (defaultConcatenatedSupportTrees)
+distantConcatenatedSupportTrees
+    .concat (randomConcatenatedSupportTrees, defaultConcatenatedSupportTrees)
     .groupTuple()
     .set{concatenatedSupportTreesGrouped}
 
@@ -595,8 +648,8 @@ concatenatedSupportTrees
  */
 
 
-supportCombinationsTested
-    .concat(defaultSupportCombinationsTested)
+distantSupportCombinationsTested
+    .concat(randomSupportCombinationsTested, defaultSupportCombinationsTested)
     .collectFile() { item -> 
         ["${item[0]}", ">" + item[1] + '\n' ] 
     }
