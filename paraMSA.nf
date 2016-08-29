@@ -57,6 +57,10 @@ Channel
     .into { datasetsA; datasetsB }
 
 
+Channel
+    .fromPath ( params.ref )
+    .set { refTree }
+
 
 /*
  * Generate the alternative alignments using guidance2
@@ -128,12 +132,13 @@ process default_alignments {
     prank -d=${datasetFile}
     mv output.best.fas ${datasetID}_default_prank_alignment.aln
 
-    t_coffee -in ${datasetFile} -outfile ${datasetID}_default_tcoffee_alignment.aln
+    t_coffee -in ${datasetFile} -outfile ${datasetID}_default_tcoffee_alignment.aln.tmp
+    t_coffee -other_pg seq_reformat -in ${datasetID}_default_tcoffee_alignment.aln.tmp -out ${datasetID}_default_tcoffee_alignment.aln
     
     esl-reformat afa ${datasetID}_default_clustal_alignment.aln > ${datasetID}_default_clustal_alignment.fa
     esl-reformat afa ${datasetID}_default_mafft_alignment.aln > ${datasetID}_default_mafft_alignment.fa
     esl-reformat afa ${datasetID}_default_prank_alignment.aln > ${datasetID}_default_prank_alignment.fa
-    esl-reformat afa ${datasetID}_default_prank_alignment.aln >${datasetID}_default_tcoffee_alignment.fa
+    esl-reformat afa ${datasetID}_default_tcoffee_alignment.aln > ${datasetID}_default_tcoffee_alignment.fa
 
     """
 }
@@ -486,7 +491,7 @@ defaultAlignmentsBootstrapTreesA
 
 
 process default_support_tree_lists {
-    tag "default_tree_list: Alignments-${x} Bootstraps-${y} ${datasetID}"
+    tag "default_tree_list: Bootstraps-${y} ${datasetID}"
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
 
     input:
@@ -512,8 +517,24 @@ process default_support_tree_lists {
 }
 
 
+/*
+ * Make sure the alignments and the strap supports are in sync with each
+ * other by combining them in a channel
+ *
+ * set val(datasetID), file ("alternativeMSA") into alternativeAlignmentDirectories_A
+ * set val (datasetID), file("${alignmentID}_${strapID}.nwk") into paramastrapTrees
+ *
+ * groupTuple emits -> [[dataset1, [treeA, treeB, treeC]], [dataset2, [treeD, treeE, treeF]] ...]
+ * phase emits -> [[[dataset1, [treeA, treeB, treeC]],[dataset1, alternativeMSA1]], [[dataset2, [treeD, treeE, treeF]],[dataset2, alternativeMSA2]] ...]
+ * map emits -> [dataset1, [treeA, treeB, treeC], alternativeMSA1], ... etc
+ */
+
+
+
 paramastrapTrees
     .groupTuple()	
+    .phase(alternativeAlignmentDirectories_C) 
+    .map {item -> [item[0][0], item[0][1], item[1][1]]}
     .set { supportTreesFiles }
 
 
@@ -524,8 +545,7 @@ process support_tree_lists {
     input:
     each x from alignmentsList
     each y from strapsList
-    set val (datasetID), file (alternativeAlignmentsDir) from alternativeAlignmentDirectories_C
-    set val (datasetID), file (supportTrees) from supportTreesFiles
+    set val (datasetID), file (supportTrees), file(alternativeAlignmentsDir) from supportTreesFiles
 
     output:
     set val(datasetID), file("distant_${x}_${y}_supportFileList.txt") into distantSupportFileLists
@@ -668,6 +688,7 @@ process node_support {
 
     input: 
     set val(datasetID), val(treeID), file(phylogeneticTree), file(supportFileList), file(listOfSupportTrees) from supportCombinationsTestedGrouped
+    file(referenceTree) from refTree.first()
 
     output:
     set val(datasetID), val(treeID), file("nodeSupportFor_${datasetID}_${treeID}_Tree.result") into nodeSupports
@@ -677,7 +698,7 @@ process node_support {
     t_coffee -other_pg seq_reformat \
              -in $phylogeneticTree \
              -in2 ${supportFileList} \
-             -action +tree2ns ${params.ref} \
+             -action +tree2ns ${referenceTree} \
              > nodeSupportFor_${datasetID}_${treeID}_Tree.result
     """
 }
