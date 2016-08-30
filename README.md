@@ -77,7 +77,7 @@ Example:
 
 
 
-#### `--straps'
+#### `--straps`
 
 * Specifies the number of support replicates to create per alternative alignment
 * By default it is set to `16`
