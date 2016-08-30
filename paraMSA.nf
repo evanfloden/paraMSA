@@ -430,7 +430,7 @@ process alternative_alignment_concatenate {
       selectedFile=\${completeAlignmentsArray[\$RANDOM % \${#completeAlignmentsArray[@]}]}
       randomAlignmentsArray=(\${randomAlignmentsArray[@]} \${selectedFile})
       delete=(\$selectedFile)
-      completeAlignmentsArray=completeAlignmentsArray[@]\\\$delete 
+      completeAlignmentsArray=completeAlignmentsArray[@]/\$delete 
     done
 
     concatenate.pl --aln \${randomAlignmentsArray[@]} --out random_${treeID}_concatenated_alignments.aln
