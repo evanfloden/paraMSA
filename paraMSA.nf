@@ -430,7 +430,7 @@ process alternative_alignment_concatenate {
       selectedFile=\${completeAlignmentsArray[\$RANDOM % \${#completeAlignmentsArray[@]}]}
       randomAlignmentsArray=(\${randomAlignmentsArray[@]} \${selectedFile})
       delete=(\$selectedFile)
-      completeAlignmentsArray=\${completeAlignmentsArray[@]/\$delete} 
+      completeAlignmentsArray=(\${completeAlignmentsArray[@]/\$delete}) 
     done
 
     concatenate.pl --aln \${randomAlignmentsArray[@]} --out random_${treeID}_concatenated_alignments.aln
@@ -619,7 +619,7 @@ process support_tree_lists {
       selectedFileMinusPath=\${selectedFile##*/}
       randomAlignmentsArray=(\${randomAlignmentsArray[@]} \${selectedFileMinusPath})
       delete=(\$selectedFileMinusPath)
-      completeAlignmentsArray=completeAlignmentsArray[@]/\$delete
+      completeAlignmentsArray=(\${completeAlignmentsArray[@]/\$delete})
       echo "added \${selectedFileMinusPath} to randomAlignmentsArray"
     done
 
