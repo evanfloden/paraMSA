@@ -9,6 +9,7 @@ A new phylogenetic tree support value termed the 'parastrap' is presented. The s
 ## Schematic Outline
 ![alt tag](https://raw.githubusercontent.com/skptic/paramsa/master/images/workflow.png)
 
+You can find the Nextflow generated directed acyclic graph [here](https://raw.githubusercontent.com/skptic/paramsa/master/images/dag.pdf)
 
 ## Quick start 
 
