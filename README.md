@@ -1,13 +1,13 @@
 # paraMSA
 
-paraMSA incorporates the information from  uncertainty in multiple sequence alignments into the construction of multiple phylogenetic trees and the bootstrap support values. The application generates combines and evaluates alternative multiple sequence alignments.
+paraMSA incorporates the information from uncertainty in multiple sequence alignments into the construction of phylogenetic trees and the bootstrap support values. The application generates, combines and evaluates alternative multiple sequence alignments to provide more accurate phylogenetic trees and more descriminative support values.
 
-Alternative alignments are generated through use of different guide trees, alignment order and gap penalties with the CLUSTALW, MAFFT and PRANK progressive aligners. The alternative alignments are then applied to phylogenetic reconstruction through generation of phylogenetic trees and support trees. 
+Alternative alignments are generated through use of different guide trees, alignment orders and gap penalties using the CLUSTALW, MAFFT and PRANK progressive aligners. The alternative alignments are then applied to phylogenetic reconstruction through generation of phylogenetic trees and support trees. 
 
 A new phylogenetic tree support value termed the 'parastrap' is presented. The support value is derived from any number of alternative alignments which are in turn bootstrapped using the traditional bootstrap method to create parastrap replicates. Each parastrap replicate can then be used to create a create a replicate tree. Tree and node evaluation versus a known phylogenetic tree is performed using the T-Coffee `seq-reformat` tools.
 
 ## Schematic Outline
-
+![alt tag](https://raw.githubusercontent.com/skptic/paramsa/master/images/workflow.png)
 
 
 ## Quick start 
@@ -55,7 +55,7 @@ Example:
     $ nextflow run skptic/paraMSA --ref '/home/my_dataset/referenceTree.nwk'
 
 
-#### '--aligner
+#### `--aligner`
 
 * Specifies the aligner to use for the generation of alternative alignments
 * Options are `CLUSTALW`, `MAFFT` and `PRANK`
@@ -188,5 +188,6 @@ Dependencies
  * T-Coffee
  * FastTree
  * HH Suite
+ * Easal Tools (from HMMER)
  * Algorithm::Cluster (Perl Module)
 
