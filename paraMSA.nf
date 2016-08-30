@@ -618,8 +618,8 @@ process support_tree_lists {
       selectedFile=\${completeAlignmentsArray[\$RANDOM % \${#completeAlignmentsArray[@]}]}
       selectedFileMinusPath=\${selectedFile##*/}
       randomAlignmentsArray=(\${randomAlignmentsArray[@]} \${selectedFileMinusPath})
-      delete=(\$selectedFile)
-      completeAlignmentsArray=completeAlignmentsArray[@]\\\$delete
+      delete=(\$selectedFileMinusPath)
+      completeAlignmentsArray=completeAlignmentsArray[@]/\$delete
       echo "added \${selectedFileMinusPath} to randomAlignmentsArray"
     done
 
