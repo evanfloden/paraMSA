@@ -61,7 +61,6 @@ Channel
 
 
 
-
 /**************************
  *
  *   C R E A T E   A L T E R N A T I V E   A L I G N M E N T S
@@ -238,11 +237,17 @@ process alternative_alignment_selection_and_concatenatation {
     ####
     # Cluster the alignments for the most distant
     ####
-    perl $baseDir/bin/hhsearch_cluster.pl ${alternativeAlignmentsDir} a3m ${numberOfAlignments} distant_${numberOfAlignments}_alignmentFileList.txt
+    perl $baseDir/bin/hhsearch_cluster.pl ${alternativeAlignmentsDir} a3m ${numberOfAlignments} distant_alignmentFileList.txt
+
+    while read line; do
+      selectedFileMinusPath=\${line##*/}
+      selectedFileMinusExtension=\${selectedFileMinusPath%.fasta}
+      echo "\$selectedFileMinusExtension" >> distant_${numberOfAlignments}_alignmentFileList.txt
+    done < distant_alignmentFileList.txt
 
     while IFS=\\= read var_${numberOfAlignments}; do
         vars_${numberOfAlignments}+=(\$var_${numberOfAlignments})
-    done < distant_${numberOfAlignments}_alignmentFileList.txt
+    done < distant_alignmentFileList.txt
 
     set selectedAlignmentsArray
     declare -a selectedAlignmentsArray=('')
@@ -250,14 +255,9 @@ process alternative_alignment_selection_and_concatenatation {
     while read file; do
         if containsElement \$file "\${vars_${numberOfAlignments}[@]}"
             then
-                echo "Adding \$file to selectedAlignmentsArray";
                 selectedAlignmentsArray=(\${selectedAlignmentsArray[@]} ${alternativeAlignmentsDir}/\${file})
-            else
-                echo "\$file not in vars_${numberOfAlignments}";
         fi
     done <<<"\$(ls -1 ${alternativeAlignmentsDir})"
-
-    echo "selected = |\${selectedAlignmentsArray[@]}|"
 
     concatenate.pl --aln \${selectedAlignmentsArray[@]} --out distant_${numberOfAlignments}_concatenated_alignments.aln
     esl-reformat phylip distant_${numberOfAlignments}_concatenated_alignments.aln > distant_${numberOfAlignments}_concatenated_alignments.phylip
@@ -285,10 +285,9 @@ process alternative_alignment_selection_and_concatenatation {
       randomAlignmentsArray=(\${randomAlignmentsArray[@]} \${selectedFile})
       delete=(\$selectedFile)
       selectedFileMinusPath=\${selectedFile##*/}
-      echo "Added \$selectedFile to randomAlignmentsArray"
-      echo "\$selectedFileMinusPath" >> random_${numberOfAlignments}_alignmentFileList.txt
+      selectedFileMinusExtension=\${selectedFileMinusPath%.fasta}
+      echo "\$selectedFileMinusExtension" >> random_${numberOfAlignments}_alignmentFileList.txt
       completeAlignmentsArray=(\${completeAlignmentsArray[@]/\$delete})
-      echo "deleting \$delete from completeAlignmentsArray"
     done
 
     concatenate.pl --aln \${randomAlignmentsArray[@]} --out random_${numberOfAlignments}_concatenated_alignments.aln
@@ -317,13 +316,13 @@ process concatenated_phylogenetic_trees {
     set val(datasetID), val(numberOfAlignments), file(randomConcatenatedAlns) from randomConcatenatedAlignmentFastas
 
     output:
-    set val(datasetID), val("distant_${numberOfAlignments}"), file("${datasetID}_distant-${numberOfAlignments}_phylogeneticTree.nwk") into distantPhylogeneticTrees
-    set val(datasetID), val("random_${numberOfAlignments}"), file("${datasetID}_random-${numberOfAlignments}_phylogeneticTree.nwk") into randomPhylogeneticTrees
+    set val(datasetID), val("distant_${numberOfAlignments}"), file("distant_${numberOfAlignments}_phylogeneticTree.nwk") into distantPhylogeneticTrees
+    set val(datasetID), val("random_${numberOfAlignments}"), file("random_${numberOfAlignments}_phylogeneticTree.nwk") into randomPhylogeneticTrees
 
     script:
     """
-    FastTree ${distantConcatenatedAlns} > ${datasetID}_distant-${numberOfAlignments}_phylogeneticTree.nwk
-    FastTree ${randomConcatenatedAlns} > ${datasetID}_random-${numberOfAlignments}_phylogeneticTree.nwk
+    FastTree ${distantConcatenatedAlns} > distant_${numberOfAlignments}_phylogeneticTree.nwk
+    FastTree ${randomConcatenatedAlns} > random_${numberOfAlignments}_phylogeneticTree.nwk
     """
 }
 
@@ -401,10 +400,6 @@ process create_default_strap_trees {
     set val (datasetID), val(aligner), val(strapID), file("${datasetID}_${aligner}_${strapID}.nwk") into defaultAlignmentsBootstrapTrees
     set val (datasetID), val(aligner), val(strapID), file("${datasetID}_${aligner}_${strapID}.phylip") into defaultAlignmentsBootstrapPhylips
 
-    script:
-    //
-    // Generate Strap Trees: Generate strap trees in Newick format for the default alignment bootstraps
-    //
 
     """
     echo "${phylip}" | tee ${datasetID}_${aligner}_${strapID}.phylip
@@ -416,6 +411,9 @@ process create_default_strap_trees {
 /*
  *
  **************************/
+
+
+
 
 /**************************
  *
@@ -454,11 +452,12 @@ process create_strap_alignments {
         outfileName=\${outfileBase##*/}
         esl-reformat phylip \$i > \${outfileName}.phylip
         echo -e "\$outfileName.phylip\nR\n\${straps}\nY\n\$seed\n" | seqboot
-        mv outfile \${outfileName}_strap.phylip
+        rm \${outfileName}.phylip
+        mv outfile \${outfileName}.phylip
     done
 
     mkdir paramastrap_phylips
-    mv *_strap.phylip paramastrap_phylips/.
+    mv *.phylip paramastrap_phylips/.
     """
 }
 
@@ -479,9 +478,11 @@ paramastrapPhylips
         def datasetID = set[0]
         def alignmentID = set[1].baseName
         def file =  set[1]
-        def strapID = 0
-        splitPhylip(file).collect{ phylip -> tuple(datasetID, alignmentID, strapID++, phylip) }
+        def strapID = 1
+        splitPhylip(file).collect{ phylip -> tuple(tuple(datasetID, alignmentID, strapID++),datasetID, alignmentID, strapID, phylip) }
+        
      }
+     .view()
      .set { splitPhylips  }
 
 /*
@@ -495,8 +496,8 @@ paramastrapPhylips
  */
 
 randomAlignmentLists
-  .concat (distantAlignmentLists)
-  .set { concatAlignmentLists }
+    .concat(distantAlignmentLists)
+    .set {concatAlignmentLists}
 
 concatAlignmentLists.into { concatAlignmentLists1; concatAlignmentLists2}
 
@@ -508,7 +509,7 @@ process strap_trees_required {
     set val(datasetID), val(numberOfAlignments), val(type), file(alignments_required) from concatAlignmentLists1
 
     output:
-    set val(datasetID), val(numberOfAlignments), val(type), file("${datasetID}_${numberOfAlignments}_${type}_treesRequired.txt") into requiredStrapTrees, requiredStrapTrees2
+    set val(datasetID), val(numberOfAlignments), val(type), file("${datasetID}_${numberOfAlignments}_${type}_treesRequired.txt") into requiredStrapTrees
 
     script:
     """
@@ -544,14 +545,16 @@ requiredStrapTrees
     splitListFile(file).collect { item -> tuple(datasetID, item[0], item[1]) }
   }
   .unique()
+  .flatMap { item -> item }
+  .view()
   .phase (splitPhylips) {item -> [item[0],item[1],item[2]]}
-  .map {item -> [item[0][0], item[0][1], item[0][2], item[1][3]]}
+  .view()
+  .map {item -> [item[0][0], item[0][1], item[0][2], item[1][4]]}
   .set {requiredSplitPhylips}
 
 /*
  *
  **************************/
-
 
 
 /**************************
@@ -585,7 +588,6 @@ process strap_trees {
 /*
  *
  **************************/
-
 
 /**************************
  *
@@ -654,24 +656,22 @@ process support_tree_lists {
     set val (datasetID), val(numberOfAlignments), val(type), file(treesRequired), file(fullListOfSupportTrees) from supports
 
     output:
-    set val(datasetID), file("${type}_${numberOfAlignments}_*_supportFileList.txt") into SupportFileLists
-    set val(datasetID), file("${type}_${numberOfAlignments}_*_concatenatedSupportTrees.nwk") into concatenatedSupportTrees
-    set val(datasetID), val("${type}_${numberOfAlignments}_*_concatenatedSupportTrees.nwk") into supportCombinationsTested
+    set val(datasetID), file("${type}_${numberOfAlignments}_supportFileList.txt") into SupportFileLists
+    set val(datasetID), file("${type}_${numberOfAlignments}_concatenatedSupportTrees.nwk") into concatenatedSupportTrees
+    set val(datasetID), val("${type}_${numberOfAlignments}_concatenatedSupportTrees.nwk") into supportCombinationsTested
 
     script:
     """
-    y=(($straps_num/${numberOfAlignemnts}))
-
     while read p; do
       stringarray=(\$p)
       alingmentID=${stringarray[0]}
       strapID=\${stringarray[1]}
-      echo "\${alingmentID}_strap_\${strapID}.nwk" >> ${type}_${numberOfAlignments}_\${y}_supportFileList.txt
+      echo "\${alingmentID}_strap_\${strapID}.nwk" >> ${type}_${numberOfAlignments}_supportFileList.txt
     done <${treesRequired}
 
-    while read p; do
-      cat \$p >> ${type}_${numberOfAlignments}_\${y}_concatenatedSupportTrees.nwk
-    done <${type}_${numberOfAlignments}_\${y}_supportFileList.txt
+    while read r; do
+      cat \$r >> ${type}_${numberOfAlignments}_concatenatedSupportTrees.nwk
+    done <${type}_${numberOfAlignments}_supportFileList.txt
 
     """
 }
@@ -706,8 +706,18 @@ distantPhylogeneticTrees
 
 concatenatedSupportTrees
     .concat(defaultConcatenatedSupportTrees)
+    .groupTuple()
     .set{fullConcatenatedSupportTrees}
 
+/*
+ *  supportCombinationsTested <- set val(datasetID), val("${type}_${numberOfAlignments}_concatenatedSupportTrees.nwk")
+ *  .collectFile emits -> datasetID.txt containing "> suppport1" etc 
+ *  .map emits -> dataset, file(list_of_supports)
+ *  
+ *  fullConcatenatedSupportTrees <- set val(datasetID), file("${type}_${numberOfAlignments}_concatenatedSupportTrees.nwk")
+ *
+ *
+ */
 
 supportCombinationsTested
     .concat(defaultSupportCombinationsTested)
