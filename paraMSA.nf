@@ -59,9 +59,15 @@ Channel
     .fromPath ( params.ref )
     .set { refTree }
 
-/*
- * Generate the alternative alignments using guidance2
- * Outputs a directory containing the alternative alignments and the default alignment
+
+
+
+/**************************
+ *
+ *   C R E A T E   A L T E R N A T I V E   A L I G N M E N T S
+ *
+ *   Generate the alternative alignments using guidance2
+ *   Outputs a directory containing the alternative alignments and the default alignment
  */
 
 process alignments {
@@ -98,6 +104,14 @@ process alignments {
 }
 
 /*
+ *
+ **************************/
+
+
+/**************************
+ *
+ *   C R E A T E   D E F A U L T   A L I G N M E N T S
+ *
  *  Create the default alignments using CLUSTALW2, MAFFT, PRANK and T-COFFEE
  */
 
@@ -140,6 +154,17 @@ process default_alignments {
     """
 }
 
+/*
+ *
+ **************************/
+
+
+
+/**************************
+ *
+ *   D E F A U L T   A L I G N M E N T   P H L Y O G E N E T I C   T R E E S
+ *
+ */
 
 defaultClustalAlignments
     .concat(defaultMafftAlignments, defaultPrankAlignments, defaultTcoffeeAlignments)
@@ -165,14 +190,238 @@ process default_phylogenetic_trees {
 
     """
     FastTree ${alignment} > ${datasetID}_${aligner}_phylogeneticTree.nwk
+    """
+}
+
+/*
+ *
+ **************************/
+
+/**************************
+ *
+ *         A L T E R N A T I V E   A L I G N M E N T   S E L E C T I O N
+ *
+ *                                   A N D
+ *
+ *    C O N C A T E N A T I O N   F O R   P H Y L O G E N E T I C   T R E E S
+ */
+
+process alternative_alignment_selection_and_concatenatation {
+    publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/concatenated_alignments", mode: 'copy', overwrite: 'true'
+
+    input:
+    set val(datasetID), file(alternativeAlignmentsDir) from alternativeAlignmentDirectories_B
+    each numberOfAlignments from alignmentsList
+
+    output:
+    set val(datasetID), val(numberOfAlignments), file("distant_${numberOfAlignments}_concatenated_alignments.phylip") into distantConcatenatedAlignmentPhylips
+    set val(datasetID), val(numberOfAlignments), file("distant_${numberOfAlignments}_concatenated_alignments.aln") into distantConcatenatedAlignmentFastas
+
+    set val(datasetID), val(numberOfAlignments), file("random_${numberOfAlignments}_concatenated_alignments.phylip") into randomConcatenatedAlignmentPhylips
+    set val(datasetID), val(numberOfAlignments), file("random_${numberOfAlignments}_concatenated_alignments.aln") into randomConcatenatedAlignmentFastas
+
+    set val(datasetID), val(numberOfAlignments), val('random'), file("random_${numberOfAlignments}_alignmentFileList.txt") into randomAlignmentLists
+    set val(datasetID), val(numberOfAlignments), val('distant'), file("distant_${numberOfAlignments}_alignmentFileList.txt") into distantAlignmentLists
+
+    //
+    // Concatenate Process: Generate the concatenated alignments in PHYLIP format
+    //
+
+    """
+    shopt -s nullglob
+    containsElement () {
+        local e
+        for e in "\${@:2}"; do [[ "\$e" == "\$1" ]] && return 0; done
+        return 1
+    }
+
+    ####
+    # Cluster the alignments for the most distant
+    ####
+    perl $baseDir/bin/hhsearch_cluster.pl ${alternativeAlignmentsDir} a3m ${numberOfAlignments} distant_${numberOfAlignments}_alignmentFileList.txt
+
+    while IFS=\\= read var_${numberOfAlignments}; do
+        vars_${numberOfAlignments}+=(\$var_${numberOfAlignments})
+    done < distant_${numberOfAlignments}_alignmentFileList.txt
+
+    set selectedAlignmentsArray
+    declare -a selectedAlignmentsArray=('')
+
+    while read file; do
+        if containsElement \$file "\${vars_${numberOfAlignments}[@]}"
+            then
+                echo "Adding \$file to selectedAlignmentsArray";
+                selectedAlignmentsArray=(\${selectedAlignmentsArray[@]} ${alternativeAlignmentsDir}/\${file})
+            else
+                echo "\$file not in vars_${numberOfAlignments}";
+        fi
+    done <<<"\$(ls -1 ${alternativeAlignmentsDir})"
+
+    echo "selected = |\${selectedAlignmentsArray[@]}|"
+
+    concatenate.pl --aln \${selectedAlignmentsArray[@]} --out distant_${numberOfAlignments}_concatenated_alignments.aln
+    esl-reformat phylip distant_${numberOfAlignments}_concatenated_alignments.aln > distant_${numberOfAlignments}_concatenated_alignments.phylip
+    #######
+
+    ####
+    # Select alignments randomly
+    ####
+    set completeAlignmentsArray
+    declare -a completeAlignmentsArray=('')
+    while read file;
+    do
+      echo "Adding \$file to completeAlignmentsArray";
+      completeAlignmentsArray=(\${completeAlignmentsArray[@]} ${alternativeAlignmentsDir}/\${file})
+    done <<<"\$(ls -1 ${alternativeAlignmentsDir})"
+
+    set randomAlignmentsArray
+    declare -a randomAlignmentsArray=('')
+    set delete
+    declare -a delete=('')
+
+    for ((i=1; i<=$numberOfAlignments; i++));
+    do
+      selectedFile=\${completeAlignmentsArray[\$RANDOM % \${#completeAlignmentsArray[@]}]}
+      randomAlignmentsArray=(\${randomAlignmentsArray[@]} \${selectedFile})
+      delete=(\$selectedFile)
+      selectedFileMinusPath=\${selectedFile##*/}
+      echo "Added \$selectedFile to randomAlignmentsArray"
+      echo "\$selectedFileMinusPath" >> random_${numberOfAlignments}_alignmentFileList.txt
+      completeAlignmentsArray=(\${completeAlignmentsArray[@]/\$delete})
+      echo "deleting \$delete from completeAlignmentsArray"
+    done
+
+    concatenate.pl --aln \${randomAlignmentsArray[@]} --out random_${numberOfAlignments}_concatenated_alignments.aln
+    esl-reformat phylip random_${numberOfAlignments}_concatenated_alignments.aln > random_${numberOfAlignments}_concatenated_alignments.phylip
 
     """
 }
 
 /*
- * Uses seqboot to create the bootstrap alignments in phylip format
- * Outputs a directory containing the bootstrapped alternative alignment replicates 
- * as well as the bootstrapped default alignment replicates
+ *
+ **************************/
+
+
+/**************************
+ *
+ *         A L T E R N A T I V E   A L I G N M E N T   P H Y L O G E N E T I C   T R E E S
+ */
+
+process concatenated_phylogenetic_trees {
+
+    tag "concatenated phylogenetic_trees: ${datasetID} - ${numberOfAlignments}"
+    publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/phylogeneticTrees", mode: 'copy', overwrite: 'true'
+
+    input:
+    set val(datasetID), val(numberOfAlignments), file(distantConcatenatedAlns) from distantConcatenatedAlignmentFastas
+    set val(datasetID), val(numberOfAlignments), file(randomConcatenatedAlns) from randomConcatenatedAlignmentFastas
+
+    output:
+    set val(datasetID), val("distant_${numberOfAlignments}"), file("${datasetID}_distant-${numberOfAlignments}_phylogeneticTree.nwk") into distantPhylogeneticTrees
+    set val(datasetID), val("random_${numberOfAlignments}"), file("${datasetID}_random-${numberOfAlignments}_phylogeneticTree.nwk") into randomPhylogeneticTrees
+
+    script:
+    """
+    FastTree ${distantConcatenatedAlns} > ${datasetID}_distant-${numberOfAlignments}_phylogeneticTree.nwk
+    FastTree ${randomConcatenatedAlns} > ${datasetID}_random-${numberOfAlignments}_phylogeneticTree.nwk
+    """
+}
+
+/*
+ *
+ **************************/
+
+
+
+/**************************
+ *
+ *   D E F A U L T   A L I G N M E N T   B O O T S T R A P   R E P L I C A T E S
+ *
+ *   Uses seqboot to create the bootstrap alignments in phylip format
+ */
+
+process create_default_alignment_straps {
+
+    tag "default phylogenetic trees: $datasetID - $aligner"
+
+    publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/default_phylogenetic_trees", mode: 'copy', overwrite: 'true'
+
+    input:
+    set val(datasetID), val(aligner), file (alignment) from defaultAlignmentsB
+
+    output:
+    set val(datasetID), val(aligner), file("${datasetID}_${aligner}_default_bootstraps.phylip") into defaultBootstrapPhylips
+
+    script:
+    //
+    // This task generates strap alignments in phylip format.
+    // For each deafault alignment, ${straps_num} strap alignments are generated.
+    //
+
+    """
+    seed=4533
+    straps=\$((${straps_num} + 1))
+    esl-reformat phylip ${alignment} > ${aligner}_default.phylip
+    echo -e "${aligner}_default.phylip\nR\n\${straps}\nY\n\$seed\n" | seqboot
+    mv outfile ${datasetID}_${aligner}_default_bootstraps.phylip
+
+    """
+}
+
+/*
+ *
+ **************************/
+
+
+/**************************
+ *
+ *   D E F A U L T   A L I G N M E N T   B O O T S T R A P   T R E E S
+ *
+ */
+
+
+defaultBootstrapPhylips
+    .flatMap { set ->
+        def datasetID = set[0]
+        def aligner = set[1]
+        def file =  set[2]
+        def strapID = 0
+        splitPhylip(file).collect{ phylip -> tuple(datasetID, aligner, strapID++, phylip) }
+     }
+    .set { defaultBootstrapPhylipsSplit } 
+
+process create_default_strap_trees {
+    tag "default_strap_trees: $datasetID"
+    publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
+
+    input:
+    set val (datasetID), val(aligner), val(strapID), val(phylip) from defaultBootstrapPhylipsSplit
+
+    output:
+    set val (datasetID), val(aligner), val(strapID), file("${datasetID}_${aligner}_${strapID}.nwk") into defaultAlignmentsBootstrapTrees
+    set val (datasetID), val(aligner), val(strapID), file("${datasetID}_${aligner}_${strapID}.phylip") into defaultAlignmentsBootstrapPhylips
+
+    script:
+    //
+    // Generate Strap Trees: Generate strap trees in Newick format for the default alignment bootstraps
+    //
+
+    """
+    echo "${phylip}" | tee ${datasetID}_${aligner}_${strapID}.phylip
+    FastTree ${datasetID}_${aligner}_${strapID}.phylip > ${datasetID}_${aligner}_${strapID}.nwk
+
+    """
+}
+
+/*
+ *
+ **************************/
+
+/**************************
+ *
+ *   A L T E R N A T I V E   A L I G N M E N T   B O O T S T R A P   R E P L I C A T E S
+ *
+ *   Uses seqboot to create the bootstrap alignments in phylip format
  */
 
 
@@ -213,37 +462,16 @@ process create_strap_alignments {
     """
 }
 
-
-paramastrapPhylipsDir.flatMap {  id, dir -> dir.listFiles().collect { [id, it] } }
-                     .set { paramastrapPhylips }
-
-/*
- *  Split the strap alignment phylips into chunks of one alignment:
- *
- *   For every item in paramastrapPhylips (contains a set of val(datasetID), file(multi_phylip_file)) :
- *       get the alignmentID from multi_phylip_file.baseName
- *       split file(multi_phylip_file) with splitPhylip
- *       create a new channel that emits a set containing val(datasetID), val(alignmentID), val(strapID), file(single_phylip)
- */
-
-def splitPhylip(file) {
-    def chunks = Channel.create() 
-    def buffer = new StringBuffer()
-    file.eachLine { line ->
-      if( line ==~ /^ +\d+\s+\d+/ ) {
-         if( buffer.length() ) 
-             chunks << buffer.toString()
-         buffer.length = 0
-      }
-      buffer.append(line).append('\n')
-
-    }
-
-   return chunks
-}
+paramastrapPhylipsDir
+    .flatMap {  id, dir -> dir.listFiles().collect { [id, it] } }
+    .set { paramastrapPhylips }
 
 /*
- * Split each directory in the channel paramastrapPhylipsDir into 
+ *  Split the paramastrap alignment phylips into chunks of one alignment:
+ *       For every item in paramastrapPhylips (contains a set of val(datasetID), file(multi_phylip_file)) :
+ *           *) get the alignmentID from multi_phylip_file.baseName
+ *           *) split file(multi_phylip_file) with splitPhylip
+ *           *) create a new channel that emits a set containing val(datasetID), val(alignmentID), val(strapID), file(single_phylip)
  */
 
 paramastrapPhylips
@@ -251,16 +479,86 @@ paramastrapPhylips
         def datasetID = set[0]
         def alignmentID = set[1].baseName
         def file =  set[1]
-        def strapID = 0 
-        splitPhylip(file).collect{ phylip -> tuple(datasetID, alignmentID, strapID++, phylip) } 
+        def strapID = 0
+        splitPhylip(file).collect{ phylip -> tuple(datasetID, alignmentID, strapID++, phylip) }
      }
-     .set { splitPhylips  }  
+     .set { splitPhylips  }
 
 /*
- * Create bootstrap trees from each boottrap alignment replicate
- * Output both the NEWICK tree and the bootstrap alignment used to generate it
+ *
+ **************************/
+
+/**************************
+ *
+ *   C R E A T E   F I L E   O F   R E Q U I R E D   P A R A M A S T A R P   R E P L I C A T E S
+ *
  */
 
+randomAlignmentLists
+  .concat (distantAlignmentLists)
+  .set { concatAlignmentLists }
+
+concatAlignmentLists.into { concatAlignmentLists1; concatAlignmentLists2}
+
+process strap_trees_required {
+    tag "strap trees required: ${datasetID}"
+    publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/strap_trees_required", mode: 'copy', overwrite: 'true'
+
+    input:
+    set val(datasetID), val(numberOfAlignments), val(type), file(alignments_required) from concatAlignmentLists1
+
+    output:
+    set val(datasetID), val(numberOfAlignments), val(type), file("${datasetID}_${numberOfAlignments}_${type}_treesRequired.txt") into requiredStrapTrees, requiredStrapTrees2
+
+    script:
+    """
+    while read p; do
+      strapsNum=\$((${straps_num} / ${numberOfAlignments}))
+      for ((i=1; i<=\$strapsNum; i++)); do
+        echo "\$p \$i" >> ${datasetID}_${numberOfAlignments}_${type}_treesRequired.txt
+       done
+    done <${alignments_required}
+
+    """
+}
+
+/*
+ *
+ **************************/
+
+/**************************
+ *
+ *   C R E A T E   C H A N N E L   O F   R E Q U I R E D   P A R A M A S T R A P   R E P L I C A T E S
+ *
+ */
+
+def splitListFile(file) {
+    file.readLines().findAll {it}.collect {line -> line.tokenize(' ')}
+    
+}
+
+requiredStrapTrees
+  .map { set ->
+    def datasetID = set[0]
+    def file = set[3]
+    splitListFile(file).collect { item -> tuple(datasetID, item[0], item[1]) }
+  }
+  .unique()
+  .phase (splitPhylips) {item -> [item[0],item[1],item[2]]}
+  .map {item -> [item[0][0], item[0][1], item[0][2], item[1][3]]}
+  .set {requiredSplitPhylips}
+
+/*
+ *
+ **************************/
+
+
+
+/**************************
+ *
+ *   C R E A T E   P A R A M A S T R A P   T R E E   R E P L I C A T E S
+ *
+ */
 
 process strap_trees {
     tag "bootstrap samples: ${datasetID} - ${alignmentID} - ${strapID}"
@@ -268,7 +566,7 @@ process strap_trees {
 
     input:
     set val (datasetID), val(alignmentID), val(strapID), val(phylip) from requiredSplitPhylips
-    
+
     output:
     set val (datasetID), file("${alignmentID}_${strapID}.nwk") into paramastrapTrees
     set val (datasetID), file("${datasetID}_${alignmentID}_${strapID}.phylip") into paramastrapSplitPhylips
@@ -279,280 +577,35 @@ process strap_trees {
     //
 
     """
-    echo "${phylip}" | tee ${datasetID}_${alignmentID}_${strapID}.phylip  
+    echo "${phylip}" | tee ${datasetID}_${alignmentID}_${strapID}.phylip
     FastTree ${datasetID}_${alignmentID}_${strapID}.phylip > ${alignmentID}_${strapID}.nwk
     """
 }
 
-
-process create_default_alignment_straps {
-
-    tag "default phylogenetic trees: $datasetID - $aligner"
-
-    publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/default_phylogenetic_trees", mode: 'copy', overwrite: 'true'
-
-    input:
-    set val(datasetID), val(aligner), file (alignment) from defaultAlignmentsB
-
-    output:
-    set val(datasetID), val(aligner), file("${datasetID}_${aligner}_default_bootstraps.phylip") into defaultBootstrapPhylips
-
-    script:
-    //
-    // This task generates strap alignments in phylip format.
-    // For each deafault alignment, ${straps_num} strap alignments are generated.
-    //
-
-    """
-    seed=4533
-    straps=\$((${straps_num} + 1))
-    esl-reformat phylip ${alignment} > ${aligner}_default.phylip
-    echo -e "${aligner}_default.phylip\nR\n\${straps}\nY\n\$seed\n" | seqboot
-    mv outfile ${datasetID}_${aligner}_default_bootstraps.phylip
-
-    """
-}
-
-defaultBootstrapPhylips
-    .flatMap { set ->
-        def datasetID = set[0]
-        def aligner = set[1]
-        def file =  set[2]
-        def strapID = 0
-        splitPhylip(file).collect{ phylip -> tuple(datasetID, aligner, strapID++, phylip) }
-     }
-     .set { defaultBootstrapPhylipsSplit }
-
-
-process create_default_strap_trees {
-    tag "default_strap_trees: $datasetID"
-    publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
-
-    input:
-    set val (datasetID), val(aligner), val(strapID), val(phylip) from defaultBootstrapPhylipsSplit
-
-    output:
-    set val (datasetID), val(aligner), val(strapID), file("${datasetID}_${aligner}_${strapID}.nwk") into defaultAlignmentsBootstrapTrees
-    set val (datasetID), val(aligner), val(strapID), file("${datasetID}_${aligner}_${strapID}.phylip") into defaultAlignmentsBootstrapPhylips
-
-    script:
-    //
-    // Generate Strap Trees: Generate strap trees in Newick format for the default alignment bootstraps
-    //
-
-    """
-    echo "${phylip}" | tee ${datasetID}_${aligner}_${strapID}.phylip
-    FastTree ${datasetID}_${aligner}_${strapID}.phylip > ${datasetID}_${aligner}_${strapID}.nwk
-
-    """
-}
-
-process alternative_alignment_concatenate {
-    publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/concatenated_alignments", mode: 'copy', overwrite: 'true'
-
-    input:
-    set val(datasetID), file(alternativeAlignmentsDir) from alternativeAlignmentDirectories_B
-    each treeID from alignmentsList
-
-    output:
-    set val(datasetID), val(treeID), file("distant_${treeID}_concatenated_alignments.phylip") into distantConcatenatedAlignmentPhylips
-    set val(datasetID), val(treeID), file("distant_${treeID}_concatenated_alignments.aln") into distantConcatenatedAlignmentFastas
-
-    set val(datasetID), val(treeID), file("random_${treeID}_concatenated_alignments.phylip") into randomConcatenatedAlignmentPhylips
-    set val(datasetID), val(treeID), file("random_${treeID}_concatenated_alignments.aln") into randomConcatenatedAlignmentFastas
-
-    set val(datasetID), val(treeID), val('random'), file("random_${datasetID}_${treeID}_alignmentFileList.txt") into randomAlignmentLists
-    set val(datasetID), val(treeID), val('distant'), file("distant_${datasetID}_${treeID}_alignmentFileList.txt") into distantAlignmentLists
-
-    //
-    // Concatenate Process: Generate the concatenated alignments in PHYLIP format
-    // 
-
-    """
-    shopt -s nullglob
-    containsElement () {
-        local e
-        for e in "\${@:2}"; do [[ "\$e" == "\$1" ]] && return 0; done
-        return 1
-    }
-
-    ####
-    # Cluster the alignments for the most distant 
-    ####
-    perl $baseDir/bin/hhsearch_cluster.pl ${alternativeAlignmentsDir} a3m ${treeID} distant_${datasetID}_${treeID}_alignmentFileList.txt
-
-    while IFS=\\= read var_${treeID}; do
-        vars_${treeID}+=(\$var_${treeID})
-    done < ${treeID}_alignmentFileList.txt
-
-    set selectedAlignmentsArray
-    declare -a selectedAlignmentsArray=('')
-
-    while read file; do
-        if containsElement \$file "\${vars_${treeID}[@]}"
-            then
-                echo "Adding \$file to selectedAlignmentsArray";
-                selectedAlignmentsArray=(\${selectedAlignmentsArray[@]} ${alternativeAlignmentsDir}/\${file})
-            else
-                echo "\$file not in vars_${treeID}";
-        fi
-    done <<<"\$(ls -1 ${alternativeAlignmentsDir})"
-
-    echo "selected = |\${selectedAlignmentsArray[@]}|"
-
-    concatenate.pl --aln \${selectedAlignmentsArray[@]} --out distant_${treeID}_concatenated_alignments.aln
-    esl-reformat phylip distant_${treeID}_concatenated_alignments.aln > distant_${treeID}_concatenated_alignments.phylip
-    ####
-
-
-    ####
-    # Select alignments randomly
-    ####
-    set completeAlignmentsArray
-    declare -a completeAlignmentsArray=('')
-    while read file; 
-    do
-      echo "Adding \$file to completeAlignmentsArray";
-      completeAlignmentsArray=(\${completeAlignmentsArray[@]} ${alternativeAlignmentsDir}/\${file})
-    done <<<"\$(ls -1 ${alternativeAlignmentsDir})"
-
-    set randomAlignmentsArray
-    declare -a randomAlignmentsArray=('')
-    set delete
-    declare -a delete=('')
-
-    for ((i=1; i<=$treeID; i++));
-    do
-      selectedFile=\${completeAlignmentsArray[\$RANDOM % \${#completeAlignmentsArray[@]}]}
-      randomAlignmentsArray=(\${randomAlignmentsArray[@]} \${selectedFile})
-      delete=(\$selectedFile)
-      selectedFileMinusPath=\${selectedFile##*/}
-      echo "Added \$selectedFile to randomAlignmentsArray"
-      echo "$selectedFileMinusPath" >> random_${datasetID}_${treeID}_alignmentFileList.txt
-      completeAlignmentsArray=(\${completeAlignmentsArray[@]/\$delete}) 
-      echo "deleting \$delete from completeAlignmentsArray"
-    done
-
-    concatenate.pl --aln \${randomAlignmentsArray[@]} --out random_${treeID}_concatenated_alignments.aln
-    esl-reformat phylip random_${treeID}_concatenated_alignments.aln > random_${treeID}_concatenated_alignments.phylip
-
-    """
-}
-
-
-/*
- * random alignments list ->  set val(datasetID), val(treeID), val('random'), file("random_${datasetID}_${treeID}_alignmentFileList.txt")
- *
- *
- * groupTuple emits -> [datasetID, ["alignmentFileList1.txt", "alignmentFileList.txt2"]], ...  
- */ 
-
-randomAlignmentLists
-  .concat (distantAlignmentLists)
-  .set { groupedAlignmentLists }
-
-groupedAlignmentLists.into { groupedAlignmentLists1; groupedAlignmentLists2}
-
-
-process strap_trees_required {
-    tag "strap trees required: ${datasetID}"
-    publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/strap_trees_required", mode: 'copy', overwrite: 'true'
-
-    input:
-    set val(datasetID), val(treeID), val(type), file(alignments_required) from groupedAlignmentsLists1
-
-    output:
-    set val(datasetID), val(treeID), val(type), file(${datasetID}_${treeID}_${type}_treesRequired.txt) into requiredStrapTrees, requiredStrapTrees2
-
-    script: 
-    """
-    while read p; do
-      strapsNum=(($straps_num/${treeID}))
-      for ((i=1; i<=\$strapsNum; i++)); do
-        echo "\$p \$i" >> ${datasetID}_${treeID}_${type}_treesRequired.txt 
-       done
-    done <${aligmnments_required}
- 
-    """
-}
-
 /*
  *
- */
-
-def splitListFile(file) {
-    file.readLines().findAll {it}.collect {line -> line.tokenize(' ')}
-}    
-
-requiredStrapTrees
-  .map { set ->
-    def datasetID = set[0]
-    def file = set[3]
-    splitListFile(file).flatMap{ item -> tuple(datasetID, item[0], item[1]) }
-  }
-  .unique()
-  .phase (splitPhylips) {item -> [item[1],item[2]]}
-  .map {item -> [item[0][0], item[0][1], item[0][2], item[1][3]]}
-  .set {requiredSplitPhylips}
+ **************************/
 
 
-process concatenated_phylogenetic_trees {
- 
-    tag "concatenated phylogenetic_trees: ${datasetID} - ${treeID}"
-    publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/phylogeneticTrees", mode: 'copy', overwrite: 'true'
-
-    input:
-    set val(datasetID), val(treeID), file(distantConcatenatedAlns) from distantConcatenatedAlignmentFastas
-    set val(datasetID), val(treeID), file(randomConcatenatedAlns) from randomConcatenatedAlignmentFastas
-
-    output:
-    set val(datasetID), val("distant_${treeID}"), file("${datasetID}_distant-${treeID}_phylogeneticTree.nwk") into distantPhylogeneticTrees
-    set val(datasetID), val("random_${treeID}"), file("${datasetID}_random-${treeID}_phylogeneticTree.nwk") into randomPhylogeneticTrees
-
-    script:
-    """
-    FastTree ${distantConcatenatedAlns} > ${datasetID}_distant-${treeID}_phylogeneticTree.nwk
-    FastTree ${randomConcatenatedAlns} > ${datasetID}_random-${treeID}_phylogeneticTree.nwk
-    """
-}
-
-
-/*
- * Combine phlyogenetic trees to be grouped by ${datasetID}
- */
-
-distantPhylogeneticTrees
-    .concat (randomPhylogeneticTrees, defaultPhylogeneticTrees)
-    .set { phylogeneticTrees }
-
-/*
- *  Collect all files from paramastrapTrees and the bootstrap trees from the same dataset 
- *  groupTuple -> emits [ val ($datasetID) [ file("${alignmentID}_${strapID}.nwk"), file("${alignmentID}_${strapID}.nwk") ... ] ] 
- */
-
-
-/*
- * defaultAlignmentsBootstrapTrees <- set val (datasetID), val(aligner), val(strapID), file("${datasetID}_${aligner}_${strapID}.nwk")
- * defaultAlignmentBootstrapFiles <- set val (datasetID), file("${datasetID}_${aligner}_${strapID}.nwk") 
+/**************************
  *
- * paramastrapTrees <- set val (datasetID), file("${alignmentID}_${strapID}.nwk")
+ *   C R E A T E   L I S T   O F   D E F A U L T   A L I G N M E N T   S U P P O R T   V A L U E S
+ *
  */
 
 defaultAlignmentsBootstrapTrees.into { defaultAlignmentsBootstrapTreesA; defaultAlignmentsBootstrapTreesB }
-
 
 defaultAlignmentsBootstrapTreesA
     .map {item -> [ item[0], item[3] ] }
     .groupTuple()
     .set { defaultAlignmentBootstrapFiles }
 
-
 process default_support_tree_lists {
     tag "default_tree_list: Bootstraps-${y} ${datasetID}"
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
 
     input:
-    each y from ('clustalw', 'mafft', 'prank', 'tcoffee') 
+    each y from ('clustalw', 'mafft', 'prank', 'tcoffee')
     set val (datasetID), file (defaultSupportTreesFiles) from defaultAlignmentBootstrapFiles
 
     output:
@@ -573,37 +626,24 @@ process default_support_tree_lists {
 
 }
 
-
 /*
- * Make sure the alignments and the strap supports are in sync with each
- * other by combining them in a channel
  *
- * set val(datasetID), file ("alternativeMSA") into alternativeAlignmentDirectories_A
- * set val (datasetID), file("${alignmentID}_${strapID}.nwk") into paramastrapTrees
+ **************************/
+
+
+/**************************
  *
- * groupTuple emits -> [[dataset1, [treeA, treeB, treeC]], [dataset2, [treeD, treeE, treeF]] ...]
- * phase emits -> [[[dataset1, [treeA, treeB, treeC]],[dataset1, alternativeMSA1]], [[dataset2, [treeD, treeE, treeF]],[dataset2, alternativeMSA2]] ...]
- * map emits -> [dataset1, [treeA, treeB, treeC], alternativeMSA1], ... etc
+ *   C R E A T E   L I S T   O F   A L T E R N A T I V E   A L I G N M E N T   S U P P O R T   V A L U E S
+ *
  */
-
-
 
 paramastrapTrees
-    .groupTuple()	
+    .groupTuple()
     .set { supportTreesFiles }
 
-
-/*
- * requiredStrapTrees2 <- set val(datasetID), val(treeID), val(type), file(${datasetID}_${treeID}_${type}_treesRequired.txt)
- * requiredStrapTrees2 <- set val(datasetID), val(10), val('random'), file(${datasetID}_${treeID}_${type}_treesRequired.txt)
- *
- *
- *  groupedAlignmentLists2 <- 
- */
-
-groupedAlignmentLists2
+concatAlignmentLists2
     .cross(supportTreesFiles)
-    .map {item -> [item[0][0], item[0][1], item[0][2], item[0][3], item[1][1]}
+    .map {item -> [item[0][0], item[0][1], item[0][2], item[0][3], item[1][1]]}
     .set {supports}
 
 process support_tree_lists {
@@ -611,38 +651,60 @@ process support_tree_lists {
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
 
     input:
-    set val (datasetID), val(treeID), val(type), file(treesRequired.txt), file(fullListOfSupportTrees) from supports
+    set val (datasetID), val(numberOfAlignments), val(type), file(treesRequired), file(fullListOfSupportTrees) from supports
 
     output:
-    set val(datasetID), file("${type}_${x}_${y}_supportFileList.txt") into SupportFileLists
-    set val(datasetID), file("${type}_${x}_${y}_concatenatedSupportTrees.nwk") into concatenatedSupportTrees
-    set val(datasetID), val("${type}_${x}_${y}_concatenatedSupportTrees.nwk") into supportCombinationsTested
-
+    set val(datasetID), file("${type}_${numberOfAlignments}_*_supportFileList.txt") into SupportFileLists
+    set val(datasetID), file("${type}_${numberOfAlignments}_*_concatenatedSupportTrees.nwk") into concatenatedSupportTrees
+    set val(datasetID), val("${type}_${numberOfAlignments}_*_concatenatedSupportTrees.nwk") into supportCombinationsTested
 
     script:
     """
-    y=(($straps_num/${treeID}))
+    y=(($straps_num/${numberOfAlignemnts}))
 
     while read p; do
       stringarray=(\$p)
       alingmentID=${stringarray[0]}
       strapID=\${stringarray[1]}
-      echo "\${alingmentID}_strap_\${strapID}.nwk" >> ${type}_${x}_${y}_supportFileList.txt
-    done <${treesRequired.txt}
+      echo "\${alingmentID}_strap_\${strapID}.nwk" >> ${type}_${numberOfAlignments}_\${y}_supportFileList.txt
+    done <${treesRequired}
 
     while read p; do
-      cat \$p >> ${type}_${x}_${y}_concatenatedSupportTrees.nwk
-    done <${type}_${x}_${y}_supportFileList.txt
+      cat \$p >> ${type}_${numberOfAlignments}_\${y}_concatenatedSupportTrees.nwk
+    done <${type}_${numberOfAlignments}_\${y}_supportFileList.txt
 
     """
 }
 
 /*
  *
- * set val(datasetID), file("${type}_${x}_${y}_concatenatedSupportTrees.nwk") into ConcatenatedSupportTrees
+ **************************/
+
+
+
+/**************************
  *
- */ 
-concatenatedSupportTrees.
+ *   G R O U P   P H Y L O G E N E T I C   T R E E S   B Y   D A T A S E T
+ *
+ *   Combine phlyogenetic trees to be grouped by ${datasetID}
+ */
+
+distantPhylogeneticTrees
+    .concat (randomPhylogeneticTrees, defaultPhylogeneticTrees)
+    .set { phylogeneticTrees }
+
+/*
+ *
+ **************************/
+
+
+/**************************
+ *
+ *   S Y N C  A N D   C O M B I N E   D A T A  B Y   D A T A S E T
+ *
+ */
+
+concatenatedSupportTrees
     .concat(defaultConcatenatedSupportTrees)
     .set{fullConcatenatedSupportTrees}
 
@@ -660,23 +722,22 @@ supportCombinationsTested
     .set { supportCombinationsTestedGrouped }
 
 /*
- *  a) Create file with list of support combinations to be tested
- *  b) map with a datasetID and the file
- *  c) phase to the concatenatedSupportTrees based on datasetID -> Now emits a list containing [ [datasetID, file(support_list_file)] , [ datasetID, [list of support tree files] ] ]  
- *  d) map this to datasetID -> emits `set val(datasetID), file(support_list_file), list(support tree files)`
- *  e) cross this with phylogeneticTrees -> emits [ 
- *                                                  [ val(datasetID), file(support_list_file), list(support tree files) ],
- *                                                  [ val(datasetID), val(treeID), file("${datasetID}_${treeID}_phylogeneticTree.nwk") ] 
- *                                                ] 
- *  f) map back to datasetID to emit [ val(datasetID), val(treeID), file("${datasetID}_${treeID}_phylogeneticTree.nwk"), file(support_list_file), file(list of support tree files)] 
+ *
+ **************************/
+
+
+/**************************
+ *
+ *   E V A L U A T E   T R E E S   A N D   S U P P O R T S
+ *
  */
 
 process node_support {
-    
+
     tag "node_support: ${datasetID} - ${treeID}"
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/nodeSupport", mode: 'copy', overwrite: 'true'
 
-    input: 
+    input:
     set val(datasetID), val(treeID), file(phylogeneticTree), file(supportFileList), file(listOfSupportTrees) from supportCombinationsTestedGrouped
     file(referenceTree) from refTree.first()
 
@@ -692,4 +753,33 @@ process node_support {
              > nodeSupportFor_${datasetID}_${treeID}_Tree.result
     """
 }
+
+/*
+ *
+ **************************/
+
+
+/**************************
+ *
+ *   F U N C T I O N S
+ */
+
+def splitPhylip(file) {
+    def chunks = Channel.create()
+    def buffer = new StringBuffer()
+    file.eachLine { line ->
+      if( line ==~ /^ +\d+\s+\d+/ ) {
+         if( buffer.length() )
+             chunks << buffer.toString()
+         buffer.length = 0
+      }
+      buffer.append(line).append('\n')
+    }
+   return chunks
+}
+
+
+/*
+ *
+ **************************/
 
