@@ -14,9 +14,9 @@ params.seq              = "$baseDir/tutorial/data/tips16_0.5_00{1,2}.0400.fa"
 params.ref              = "$baseDir/tutorial/data/asymmetric_0.5.unroot.tree"
 params.output           = "$baseDir/tutorial/results/"
 params.straps           = 16
-params.straps_list      = '1,2,4,8,16'
+params.straps_list      = '1,4,16'
 params.alignments       = 16
-params.alignments_list  = '1,2,4,8,16'
+params.alignments_list  = '1,4,16'
 params.aligner          = "CLUSTALW"
 
 log.info "p a r a M S A ~  version 0.1"
@@ -391,7 +391,7 @@ defaultBootstrapPhylips
 
 process create_default_strap_trees {
     tag "default_strap_trees: $datasetID"
-    publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
+    publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/default_strap_trees", mode: 'copy', overwrite: 'true'
 
     input:
     set val (datasetID), val(aligner), val(strapID), val(phylip) from defaultBootstrapPhylipsSplit
@@ -479,10 +479,13 @@ paramastrapPhylips
         def alignmentID = set[1].baseName
         def file =  set[1]
         def strapID = 1
-        splitPhylip(file).collect{ phylip -> tuple(tuple(datasetID, alignmentID, strapID++),datasetID, alignmentID, strapID, phylip) }
+        splitPhylip(file).collect{ phylip -> [[datasetID, alignmentID, strapID],datasetID, alignmentID, strapID++, phylip] }
         
      }
-     .view()
+     .map{ item -> 
+         String stringStrap = item[0][2]; 
+         [ tuple(item[0][0],item[0][1], stringStrap), item[1], item[2], item[3], item[4]]
+     }  
      .set { splitPhylips  }
 
 /*
@@ -509,7 +512,7 @@ process strap_trees_required {
     set val(datasetID), val(numberOfAlignments), val(type), file(alignments_required) from concatAlignmentLists1
 
     output:
-    set val(datasetID), val(numberOfAlignments), val(type), file("${datasetID}_${numberOfAlignments}_${type}_treesRequired.txt") into requiredStrapTrees
+    set val(datasetID), val(numberOfAlignments), val(type), file("${datasetID}_${numberOfAlignments}_${type}_treesRequired.txt") into requiredStrapTrees, requiredStrapTrees2
 
     script:
     """
@@ -535,7 +538,6 @@ process strap_trees_required {
 
 def splitListFile(file) {
     file.readLines().findAll {it}.collect {line -> line.tokenize(' ')}
-    
 }
 
 requiredStrapTrees
@@ -545,11 +547,10 @@ requiredStrapTrees
     splitListFile(file).collect { item -> tuple(datasetID, item[0], item[1]) }
   }
   .unique()
-  .flatMap { item -> item }
-  .view()
-  .phase (splitPhylips) {item -> [item[0],item[1],item[2]]}
-  .view()
-  .map {item -> [item[0][0], item[0][1], item[0][2], item[1][4]]}
+  .flatMap {item ->  item }
+  .map { item -> [ tuple(item[0],item[1], item[2]), item[0], item[1], item[2] ] }
+  .phase (splitPhylips) 
+  .map {item -> [item[0][1], item[0][2], item[0][3], item[1][4]]}
   .set {requiredSplitPhylips}
 
 /*
@@ -603,7 +604,7 @@ defaultAlignmentsBootstrapTreesA
     .set { defaultAlignmentBootstrapFiles }
 
 process default_support_tree_lists {
-    tag "default_tree_list: Bootstraps-${y} ${datasetID}"
+    tag "default_tree_list: Aligner ${y} ${datasetID}"
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
 
     input:
@@ -639,17 +640,19 @@ process default_support_tree_lists {
  *
  */
 
+
 paramastrapTrees
     .groupTuple()
     .set { supportTreesFiles }
 
-concatAlignmentLists2
-    .cross(supportTreesFiles)
-    .map {item -> [item[0][0], item[0][1], item[0][2], item[0][3], item[1][1]]}
+supportTreesFiles
+    .cross(requiredStrapTrees2) 
+    .view()
+    .map {item -> [item[1][0], item[1][1], item[1][2], item[1][3], item[0][1]]}
     .set {supports}
 
 process support_tree_lists {
-    tag "distant and random tree_list: Alignments-${x} Bootstraps-${y} ${datasetID}"
+    tag "distant and random tree_list: ${datasetID} - Alignments:${numberOfAlignments}"
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
 
     input:
@@ -664,9 +667,9 @@ process support_tree_lists {
     """
     while read p; do
       stringarray=(\$p)
-      alingmentID=${stringarray[0]}
+      alingmentID=\${stringarray[0]}
       strapID=\${stringarray[1]}
-      echo "\${alingmentID}_strap_\${strapID}.nwk" >> ${type}_${numberOfAlignments}_supportFileList.txt
+      echo "\${alingmentID}_\${strapID}.nwk" >> ${type}_${numberOfAlignments}_supportFileList.txt
     done <${treesRequired}
 
     while read r; do
