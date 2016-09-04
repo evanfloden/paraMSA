@@ -73,7 +73,7 @@ Channel
  */
 
 process alignments {
-    tag "guidance2: $datasetID"
+    tag "generate alternative alignments: $datasetID"
 
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/alignments", mode: 'copy', overwrite: 'true'
   
@@ -118,7 +118,7 @@ process alignments {
  */
 
 process default_alignments {
-    tag "default alignments: $datasetID"
+    tag "generate default alignments: $datasetID"
 
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/default_alignments", mode: 'copy', overwrite: 'true'
 
@@ -174,7 +174,7 @@ defaultClustalAlignments
 defaultAlignments.into { defaultAlignmentsA; defaultAlignmentsB }
 
 process default_phylogenetic_trees {
-    tag "default phylogenetic trees: $datasetID - $aligner"
+    tag "create default phylogenetic trees: $datasetID - $aligner"
 
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/default_phylogenetic_trees", mode: 'copy', overwrite: 'true'
 
@@ -209,6 +209,8 @@ process default_phylogenetic_trees {
  */
 
 process alternative_alignment_selection_and_concatenatation {
+
+    tag "select and concatenate alternative alignments: $datasetID - distant & random $numberOfAlignments"
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/concatenated_alignments", mode: 'copy', overwrite: 'true'
 
     input:
@@ -311,7 +313,7 @@ process alternative_alignment_selection_and_concatenatation {
 
 process concatenated_phylogenetic_trees {
 
-    tag "concatenated phylogenetic_trees: ${datasetID} - ${numberOfAlignments}"
+    tag "create alternative alignment phylogenetic trees: ${datasetID} - distant & random ${numberOfAlignments}"
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/phylogeneticTrees", mode: 'copy', overwrite: 'true'
 
     input:
@@ -343,8 +345,7 @@ process concatenated_phylogenetic_trees {
 
 process create_default_alignment_straps {
 
-    tag "default bootstrap replicates: $datasetID - $aligner"
-
+    tag "create default alignment bootstrap replicates: $datasetID - $aligner"
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/default_phylogenetic_trees", mode: 'copy', overwrite: 'true'
 
     input:
@@ -392,7 +393,8 @@ defaultBootstrapPhylips
     .set { defaultBootstrapPhylipsSplit } 
 
 process create_default_strap_trees {
-    tag "default_strap_trees: $datasetID - $aligner - $strapID"
+
+    tag "generate default alignment bootstrap trees: $datasetID - $aligner - strap:${strapID}"
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
 
     input:
@@ -424,7 +426,8 @@ process create_default_strap_trees {
 
 
 process create_strap_alignments {
-    tag "strap alignments: $datasetID"
+    
+    tag "create alternative alignment bootstrap replicates: $datasetID"
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/strap_alignments", mode: 'copy', overwrite: 'true'
 
     input:
@@ -494,7 +497,8 @@ randomAlignmentLists
     .set {concatAlignmentLists}
 
 process strap_trees_required {
-    tag "strap trees required: ${datasetID}"
+    
+    tag "determine required alternative alignment strap trees: $datasetID - ${type}_${numberOfAlignments}"
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/strap_trees_required", mode: 'copy', overwrite: 'true'
 
     input:
@@ -528,7 +532,6 @@ process strap_trees_required {
 
 def splitListFile(file) {
     file.readLines().findAll {it}.collect {line -> line.tokenize(' ')}
-    
 }
 
 requiredStrapTrees
@@ -558,7 +561,8 @@ requiredStrapTrees
  */
 
 process strap_trees {
-    tag "bootstrap samples: ${datasetID} - ${alignmentID} - ${strapID}"
+
+    tag "generate alternative alignment bootstrap trees: $datasetID - $alignmentID - strap:${strapID}"
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
 
     input:
@@ -590,15 +594,14 @@ process strap_trees {
  *
  */
 
-defaultAlignmentsBootstrapTrees.into { defaultAlignmentsBootstrapTreesA; defaultAlignmentsBootstrapTreesB }
-
-defaultAlignmentsBootstrapTreesA
+defaultAlignmentsBootstrapTrees
     .map {item -> [ item[0], item[3] ] }
     .groupTuple()
     .set { defaultAlignmentBootstrapFiles }
 
 process default_support_tree_lists {
-    tag "default_tree_list: Bootstraps-${y} ${datasetID}"
+
+    tag "create list of default alignment support values: ${datasetID} - ${y}"
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
 
     input:
@@ -644,7 +647,8 @@ supportTreesFiles
     .set {supports}
 
 process support_tree_lists {
-    tag "distant and random tree_list: Alignments-${x} Bootstraps-${y} ${datasetID}"
+
+    tag "distant and random alignment tree lists: ${datasetID} - ${type} - ${numberOfAlignments}"
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/supportSelection", mode: 'copy', overwrite: 'true'
 
     input:
