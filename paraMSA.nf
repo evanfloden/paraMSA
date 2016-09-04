@@ -13,11 +13,11 @@ params.name             = "tutorial_data"
 params.seq              = "$baseDir/tutorial/data/tips16_0.5_00{1,2}.0400.fa"
 params.ref              = "$baseDir/tutorial/data/asymmetric_0.5.unroot.tree"
 params.output           = "$baseDir/tutorial/results/"
-params.straps           = 16
-params.straps_list      = '1,2,4,8,16'
-params.alignments       = 16
-params.alignments_list  = '1,2,4,8,16'
-params.aligner          = "CLUSTALW"
+params.straps           = 4
+params.straps_list      = '1,4'
+params.alignments       = 4
+params.alignments_list  = '1,4'
+params.aligner          = "MAFFT"
 
 log.info "p a r a M S A ~  version 0.1"
 log.info "====================================="
@@ -32,22 +32,22 @@ log.info "alignments list                 : ${params.alignments_list}"
 log.info "aligner [CLUSTALW|MAFFT|PRANK]  : ${params.aligner}"
 log.info "\n"
 
-/*
- * Input parameters validation
+
+/**************************
+ * 
+ * S E T U P   I N P U T S   A N D   P A R A M E T E R S
+ *
  */
 
-alignments_num     = params.alignments as int
-straps_num         = params.straps as int
-
-strapsList         = params.straps_list.tokenize(',')
-alignmentsList     = params.alignments_list.tokenize(',')
-
-def guidanceBootraps = alignments_num / 4 
+    alignments_num         = params.alignments as int
+    straps_num             = params.straps as int
+    strapsList             = params.straps_list.tokenize(',')
+    alignmentsList         = params.alignments_list.tokenize(',')
+    def guidanceBootraps   = alignments_num / 4 
 
 /*
- * Create a channel for input sequence files 
+ * Create a channel for input sequence files & the reference tree
  */
-
 
 Channel
     .fromPath( params.seq )
@@ -59,6 +59,9 @@ Channel
     .fromPath ( params.ref )
     .set { refTree }
 
+/*
+ *
+ **************************/
 
 
 /**************************
@@ -158,7 +161,6 @@ process default_alignments {
  **************************/
 
 
-
 /**************************
  *
  *   D E F A U L T   A L I G N M E N T   P H L Y O G E N E T I C   T R E E S
@@ -195,6 +197,7 @@ process default_phylogenetic_trees {
 /*
  *
  **************************/
+
 
 /**************************
  *
@@ -254,8 +257,8 @@ process alternative_alignment_selection_and_concatenatation {
 
     while read file; do
         if containsElement \$file "\${vars_${numberOfAlignments}[@]}"
-            then
-                selectedAlignmentsArray=(\${selectedAlignmentsArray[@]} ${alternativeAlignmentsDir}/\${file})
+        then
+            selectedAlignmentsArray=(\${selectedAlignmentsArray[@]} ${alternativeAlignmentsDir}/\${file})
         fi
     done <<<"\$(ls -1 ${alternativeAlignmentsDir})"
 
@@ -292,7 +295,7 @@ process alternative_alignment_selection_and_concatenatation {
 
     concatenate.pl --aln \${randomAlignmentsArray[@]} --out random_${numberOfAlignments}_concatenated_alignments.aln
     esl-reformat phylip random_${numberOfAlignments}_concatenated_alignments.aln > random_${numberOfAlignments}_concatenated_alignments.phylip
-
+    
     """
 }
 
@@ -331,7 +334,6 @@ process concatenated_phylogenetic_trees {
  **************************/
 
 
-
 /**************************
  *
  *   D E F A U L T   A L I G N M E N T   B O O T S T R A P   R E P L I C A T E S
@@ -341,7 +343,7 @@ process concatenated_phylogenetic_trees {
 
 process create_default_alignment_straps {
 
-    tag "default phylogenetic trees: $datasetID - $aligner"
+    tag "default bootstrap replicates: $datasetID - $aligner"
 
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/default_phylogenetic_trees", mode: 'copy', overwrite: 'true'
 
@@ -390,7 +392,7 @@ defaultBootstrapPhylips
     .set { defaultBootstrapPhylipsSplit } 
 
 process create_default_strap_trees {
-    tag "default_strap_trees: $datasetID"
+    tag "default_strap_trees: $datasetID - $aligner - $strapID"
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
 
     input:
@@ -411,8 +413,6 @@ process create_default_strap_trees {
 /*
  *
  **************************/
-
-
 
 
 /**************************
@@ -463,31 +463,25 @@ process create_strap_alignments {
 
 paramastrapPhylipsDir
     .flatMap {  id, dir -> dir.listFiles().collect { [id, it] } }
-    .set { paramastrapPhylips }
-
-/*
- *  Split the paramastrap alignment phylips into chunks of one alignment:
- *       For every item in paramastrapPhylips (contains a set of val(datasetID), file(multi_phylip_file)) :
- *           *) get the alignmentID from multi_phylip_file.baseName
- *           *) split file(multi_phylip_file) with splitPhylip
- *           *) create a new channel that emits a set containing val(datasetID), val(alignmentID), val(strapID), file(single_phylip)
- */
-
-paramastrapPhylips
     .flatMap { set ->
         def datasetID = set[0]
         def alignmentID = set[1].baseName
         def file =  set[1]
         def strapID = 1
-        splitPhylip(file).collect{ phylip -> tuple(tuple(datasetID, alignmentID, strapID++),datasetID, alignmentID, strapID, phylip) }
-        
-     }
-     .view()
-     .set { splitPhylips  }
+        splitPhylip(file).collect{ 
+            phylip -> tuple(tuple(datasetID, alignmentID, strapID++),datasetID, alignmentID, strapID-1, phylip) 
+        }
+    }
+    .map { item -> 
+        String strapNumber = item[0][2];
+        [tuple(item[0][0],item[0][1],strapNumber),item[1],item[2],item[3],item[4]]
+    }
+    .set { splitPhylips  }
 
 /*
  *
  **************************/
+
 
 /**************************
  *
@@ -499,17 +493,15 @@ randomAlignmentLists
     .concat(distantAlignmentLists)
     .set {concatAlignmentLists}
 
-concatAlignmentLists.into { concatAlignmentLists1; concatAlignmentLists2}
-
 process strap_trees_required {
     tag "strap trees required: ${datasetID}"
     publishDir "${params.output}/${params.name}/${params.aligner}/${datasetID}/strap_trees_required", mode: 'copy', overwrite: 'true'
 
     input:
-    set val(datasetID), val(numberOfAlignments), val(type), file(alignments_required) from concatAlignmentLists1
+    set val(datasetID), val(numberOfAlignments), val(type), file(alignments_required) from concatAlignmentLists
 
     output:
-    set val(datasetID), val(numberOfAlignments), val(type), file("${datasetID}_${numberOfAlignments}_${type}_treesRequired.txt") into requiredStrapTrees
+    set val(datasetID), val(numberOfAlignments), val(type), file("${datasetID}_${numberOfAlignments}_${type}_treesRequired.txt") into requiredStrapTrees, requiredStrapTrees2
 
     script:
     """
@@ -526,6 +518,7 @@ process strap_trees_required {
 /*
  *
  **************************/
+
 
 /**************************
  *
@@ -544,12 +537,13 @@ requiredStrapTrees
     def file = set[3]
     splitListFile(file).collect { item -> tuple(datasetID, item[0], item[1]) }
   }
+  .flatMap()
   .unique()
-  .flatMap { item -> item }
+  .map { item -> [tuple(item[0],item[1],item[2]), item[0], item[1], item[2]] }
   .view()
-  .phase (splitPhylips) {item -> [item[0],item[1],item[2]]}
-  .view()
-  .map {item -> [item[0][0], item[0][1], item[0][2], item[1][4]]}
+  .phase (splitPhylips)
+  .view ()
+  .map {item -> [item[0][1], item[0][2], item[0][3], item[1][4]]}
   .set {requiredSplitPhylips}
 
 /*
@@ -588,6 +582,7 @@ process strap_trees {
 /*
  *
  **************************/
+
 
 /**************************
  *
@@ -643,9 +638,9 @@ paramastrapTrees
     .groupTuple()
     .set { supportTreesFiles }
 
-concatAlignmentLists2
-    .cross(supportTreesFiles)
-    .map {item -> [item[0][0], item[0][1], item[0][2], item[0][3], item[1][1]]}
+supportTreesFiles
+    .cross(requiredStrapTrees2)
+    .map {item -> [item[1][0], item[1][1], item[1][2], item[1][3], item[0][1]]}
     .set {supports}
 
 process support_tree_lists {
@@ -664,9 +659,9 @@ process support_tree_lists {
     """
     while read p; do
       stringarray=(\$p)
-      alingmentID=${stringarray[0]}
+      alingmentID=\${stringarray[0]}
       strapID=\${stringarray[1]}
-      echo "\${alingmentID}_strap_\${strapID}.nwk" >> ${type}_${numberOfAlignments}_supportFileList.txt
+      echo "\${alingmentID}_\${strapID}.nwk" >> ${type}_${numberOfAlignments}_supportFileList.txt
     done <${treesRequired}
 
     while read r; do
@@ -708,16 +703,6 @@ concatenatedSupportTrees
     .concat(defaultConcatenatedSupportTrees)
     .groupTuple()
     .set{fullConcatenatedSupportTrees}
-
-/*
- *  supportCombinationsTested <- set val(datasetID), val("${type}_${numberOfAlignments}_concatenatedSupportTrees.nwk")
- *  .collectFile emits -> datasetID.txt containing "> suppport1" etc 
- *  .map emits -> dataset, file(list_of_supports)
- *  
- *  fullConcatenatedSupportTrees <- set val(datasetID), file("${type}_${numberOfAlignments}_concatenatedSupportTrees.nwk")
- *
- *
- */
 
 supportCombinationsTested
     .concat(defaultSupportCombinationsTested)
@@ -787,7 +772,6 @@ def splitPhylip(file) {
     }
    return chunks
 }
-
 
 /*
  *
