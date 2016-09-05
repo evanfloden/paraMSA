@@ -543,9 +543,7 @@ requiredStrapTrees
   .flatMap()
   .unique()
   .map { item -> [tuple(item[0],item[1],item[2]), item[0], item[1], item[2]] }
-  .view()
   .phase (splitPhylips)
-  .view ()
   .map {item -> [item[0][1], item[0][2], item[0][3], item[1][4]]}
   .set {requiredSplitPhylips}
 
