@@ -2,38 +2,39 @@
 
 use strict;
 use warnings;
+use File::Find::Rule;
 
-# Take as input a directory containing nodesupport reslts with the following filename format:
-# tips16_0.5_0400_001_baseTree.result
+# Take as input a directory containing results with the following filename format:
+# CLUSTALW/tips16_2.0_001.0400/nodeSupport/nodeSupportFor_tips16_2.0_001.0400_random_100_Tree.result
+
 
 my %da;
 my %depth;
 my $datasetID;
 my ($tips, $sym, $len, $set, $tree);
 
-my @fileArray;
-my $dir=$ARGV[0];
-opendir (DIR, $dir) or die $!;
-while (my $file = readdir(DIR)) {
-  push @fileArray, $file;
-}
-close(DIR);
+my $dir = $ARGV[0];
 
-foreach my $resultFile (@fileArray) {
+my @files = File::Find::Rule->file()
+                            ->name("*.result")
+                            ->in($dir);
+
+
+foreach my $resultFile (@files) {
     #print "Results File $resultFile\n";
-    if ($resultFile=~/(tips\d+)_(\d.\d)_(\d+)_(\d+)_(Base|Concatenated)Tree.result/) {
-        $datasetID="$1_$2";
-	#print "DatasetID $datasetID\n";
-        my $tips = $1;
-	my $sym  = $2;
-	my $len  = $3;
-	my $set  = $4;
-	my $tree = $5;
-
+    if ($resultFile=~/[\s\S]+\/(CLUSTALW|MAFFT|PRANK)\/[\s\S]+\/nodeSupport\/nodeSupportFor_(tips\d+)_(\d.\d)_(\d+).(\d+)_(\S+)_Tree.result/) {
+        my $aligner =$1;
+        my $tips    =$2;
+        my $sym     =$3;
+        my $set     =$4;
+        my $len     =$5;
+        my $tree    =$6;
+       	my $datasetID="$1_$2_$3";
+	print "DatasetID $datasetID\n";
         my @bootstrapMethodList;
         my $node;
         
-        open (F, "$dir/$resultFile");
+        open (F, $resultFile);
         print "Open $resultFile\n";
         while (<F>) {
             my $line=$_;
@@ -42,7 +43,7 @@ foreach my $resultFile (@fileArray) {
                 my $bootstrapMethod;
                 # weightedBootstrapTreesConcat.nwk
                 #print "LINE=$line\n";
-		$line=~/(partial|weighted|base|super)BootstrapTreesConcat.nwk/;
+		$line=~/([\S_]+)_concatenatedSupportTrees.nwk/;
                 $bootstrapMethod=$1;
                 @bootstrapMethodList=(@bootstrapMethodList,$bootstrapMethod);
             }
@@ -65,7 +66,7 @@ foreach my $resultFile (@fileArray) {
                     $da{$datasetID}{$tree}{$bootstrapMethod}{$set}{'node'}{$node}{'bs'}          =$v[$count]; #BS support for the node
 		    $da{$datasetID}{$tree}{$bootstrapMethod}{$set}{'tree'}{bs}                +=$v[$count]; #Sum BS supports in tree    
 		    $da{$datasetID}{$tree}{$bootstrapMethod}{$set}{'tree'}{nnode}++;            
-                    print "Dataset $datasetID\nTree $tree\nBootstrap $bootstrapMethod\nSet $set\nNode $node\n\n";
+		    #       print "Dataset $datasetID\nTree $tree\nBootstrap $bootstrapMethod\nSet $set\nNode $node\n\n";
                     $count++;
 	        
                     # Avg Number of Correct Nodes
@@ -91,12 +92,19 @@ foreach my $resultFile (@fileArray) {
     }
 }
 
+
 my @list_exp               = sort (keys (%da));
-my @list_trees             = sort (keys (%{$da{@list_exp[0]}}));
-my @list_bootstrapMethods  = sort (keys (%{$da{@list_exp[0]}{$list_trees[0]}}));
-my @list_sets              = sort (keys (%{$da{@list_exp[0]}{$list_trees[0]}{$list_bootstrapMethods[0]}}));
+my @list_trees             = sort (keys (%{$da{$list_exp[0]}}));
+my @list_bootstrapMethods  = sort (keys (%{$da{$list_exp[0]}{$list_trees[0]}}));
+my @list_sets              = sort (keys (%{$da{$list_exp[0]}{$list_trees[0]}{$list_bootstrapMethods[0]}}));
+my @list_tips              = ('tips16');
+my @list_syms              = ('2.0');
+my @list_aligners          = ('CLUSTALW', 'MAFFT');
 
-
+print "@list_exp\n";
+print "@list_trees\n";
+print "@list_bootstrapMethods\n";
+print "@list_sets\n";
 
 
 my %ma;
@@ -105,12 +113,12 @@ my %bacc;
 my $nexp;
 foreach my $exp (sort (keys (%da))) {
     $nexp++;
+    print "exp = |$exp|\n";
     foreach my $tree (sort (keys (%{$da{$exp}}))) {
         my $j=1;
         my $y;
-        my @bootstrapMethods = (sort (keys (%{$da{$exp}{$tree}})));
-        my $bootstrapMethod = shift(@bootstrapMethods);
-        foreach my $set (sort (keys %{$da{$exp}{$tree}{$bootstrapMethod}})) {
+        my $bootstrapMethod = $list_bootstrapMethods[0];
+	foreach my $set (sort (keys %{$da{$exp}{$tree}{$bootstrapMethod}})) {
             my @ll=keys(%{$da{$exp}{$tree}{$bootstrapMethod}});
             my $nset=$#ll+1;
             $y->[$j][1]=$da{$exp}{$tree}{$bootstrapMethod}{$set}{'tree'}{'bs'};
@@ -120,34 +128,24 @@ foreach my $exp (sort (keys (%da))) {
             $ma{$exp}{$tree}{$bootstrapMethod}{'acc'}+=$da{$exp}{$tree}{$bootstrapMethod}{$set}{'tree'}{'acc'}/$nset;
             $ma{$exp}{$tree}{$bootstrapMethod}{'bs'}+=$da{$exp}{$tree}{$bootstrapMethod}{$set}{'tree'}{'bs'}/$nset;
             
-            $ma{all}{$tree}{$bootstrapMethod}{'acc'}+=$da{$exp}{$tree}{$bootstrapMethod}{$set}{'tree'}{'acc'}/$nset;
-            $ma{all}{$tree}{$bootstrapMethod}{'bs'}+=$da{$exp}{$tree}{$bootstrapMethod}{$set}{'tree'}{'bs'}/$nset;
-            
         }
     }
 }
 
-
-my @treeList=('Base','Concatenated');
-my @methodsList=('base','partial','super','weighted');
-my @tipsList=('tips16', 'tips32', 'tips64');
-my @symList=('0.5','1.0','2.0');
-
 print "Table 1.1: Average Topological Accuracy\n";
-foreach my $tree (@treeList) {
-    print "$tree ";
-    foreach my $tips (@tipsList) {
-        foreach my $sym (@symList) {
-            my $exp="$tips\_$sym";
-            my @bootstrapMethods = (keys (%{$da{$exp}{$tree}}));
-            my $bootstrapMethod = shift(@bootstrapMethods);
-            printf "%.3f ", $ma{$exp}{$tree}{$bootstrapMethod}{acc};
-         }
-    }
-    printf "%.3f ",$ma{all}{$tree}{'base'}{acc}/$nexp;
-    print "\n";
+foreach my $header (@list_exp) {
+  print "$header\t";
 }
-
+print "\n";
+foreach my $tree (@list_trees) {
+  printf "$tree\t";
+  foreach my $exp (@list_exp) {
+    my $bootstrapMethod = $list_bootstrapMethods[0];
+    printf "%.3f\t", $ma{$exp}{$tree}{$bootstrapMethod}{acc};
+  }    
+  print "\n";
+}
+print "\n";
 
 
 ## ROC Data
@@ -156,43 +154,39 @@ foreach my $tree (@treeList) {
 my $filename = "ROC.data";
 open my $fh, '>', $filename or die;
 
-foreach my $method (@methodsList) {
-  print $fh "$method.labels,";
-  foreach my $tips (@tipsList) {
-    foreach my $sym (@symList) {
-      my $exp="$tips\_$sym";
-      foreach my $tree (@treeList) {
-          foreach my $set (sort (keys %{$da{$exp}{$tree}{$method}})) {
-              foreach my $node (keys %{$da{$exp}{$tree}{$method}{$set}{node}}) {
-                  print $fh "$da{$exp}{$tree}{$method}{$set}{'node'}{$node}{'treeCorrect'},";
-          }
-        }
+foreach my $exp (@list_exp) { 
+  my @tmpArray = split(/_/,$exp);
+  my $tree_for_comparison = $tmpArray[0];
+  $tree_for_comparison = lc($tree_for_comparison);
+  foreach my $bs_method(@list_bootstrapMethods) {
+    print $fh "${exp}_${bs_method}.labels,";
+    foreach my $set (sort (keys %{$da{$exp}{$tree_for_comparison}{$bs_method}})) {
+      foreach my $node (keys %{$da{$exp}{$tree_for_comparison}{$bs_method}{$set}{node}}) {
+        print $fh "$da{$exp}{$tree_for_comparison}{$bs_method}{$set}{'node'}{$node}{'treeCorrect'},";
       }
     }
   }
-  print $fh "\b \b\n";
+print $fh "\b \b\n";
 }
 
 
-foreach my $method (@methodsList){
-  print $fh "$method.predictions,";
-  foreach my $tips (@tipsList) {
-    foreach my $sym (@symList) {
-      my $exp="$tips\_$sym";
-      foreach my $tree (@treeList) {
-          foreach my $set (sort (keys %{$da{$exp}{$tree}{$method}})) {
-              foreach my $node (keys %{$da{$exp}{$tree}{$method}{$set}{node}}) {
-                  print $fh "$da{$exp}{$tree}{$method}{$set}{'node'}{$node}{'bs'},";
-          }
-        }
+foreach my $exp (@list_exp) {
+  my @tmpArray = split(/_/,$exp);
+  my $tree_for_comparison = $tmpArray[0];
+  $tree_for_comparison = lc($tree_for_comparison);
+  print "T4C =|$tree_for_comparison|\n";
+  foreach my $bs_method(@list_bootstrapMethods) {
+    print $fh "${exp}_${bs_method}.labels,";
+    foreach my $set (sort (keys %{$da{$exp}{$tree_for_comparison}{$bs_method}})) {
+      foreach my $node (keys %{$da{$exp}{$tree_for_comparison}{$bs_method}{$set}{node}}) {
+        print $fh "$da{$exp}{$tree_for_comparison}{$bs_method}{$set}{'node'}{$node}{'treeCorrect'},";
       }
     }
-  }
-  print $fh "\b \b\n";
+  } 
+print $fh "\b \b\n";
 }
 
 
-# Best Mathews Correlation Coefficent
 
 sub list2bmcc
   {
@@ -240,5 +234,3 @@ sub list2bmcc
      return $bmcc;
    }
 
-
-## Accuracy 
