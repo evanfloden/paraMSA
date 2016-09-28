@@ -398,7 +398,7 @@ process create_default_strap_trees {
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
 
     input:
-    set val (datasetID), val(aligner), val(strapID), val(phylip) from defaultBootstrapPhylipsSplit
+    set val (datasetID), val(aligner), val(strapID), file(phylip) from defaultBootstrapPhylipsSplit
 
     output:
     set val (datasetID), val(aligner), val(strapID), file("${datasetID}_${aligner}_${strapID}.nwk") into defaultAlignmentsBootstrapTrees
@@ -406,7 +406,7 @@ process create_default_strap_trees {
 
 
     """
-    echo "${phylip}" | tee ${datasetID}_${aligner}_${strapID}.phylip
+    cat "${phylip}" | tee ${datasetID}_${aligner}_${strapID}.phylip
     FastTree ${datasetID}_${aligner}_${strapID}.phylip > ${datasetID}_${aligner}_${strapID}.nwk
 
     """
@@ -564,7 +564,7 @@ process strap_trees {
     publishDir "${params.output}/${params.name}/${params.aligner}/$datasetID/strap_trees", mode: 'copy', overwrite: 'true'
 
     input:
-    set val (datasetID), val(alignmentID), val(strapID), val(phylip) from requiredSplitPhylips
+    set val (datasetID), val(alignmentID), val(strapID), file(phylip) from requiredSplitPhylips
 
     output:
     set val (datasetID), file("${alignmentID}_${strapID}.nwk") into paramastrapTrees
@@ -576,7 +576,7 @@ process strap_trees {
     //
 
     """
-    echo "${phylip}" | tee ${datasetID}_${alignmentID}_${strapID}.phylip
+    cat "${phylip}" | tee ${datasetID}_${alignmentID}_${strapID}.phylip
     FastTree ${datasetID}_${alignmentID}_${strapID}.phylip > ${alignmentID}_${strapID}.nwk
     """
 }
@@ -763,12 +763,15 @@ process node_support {
  */
 
 def splitPhylip(file) {
-    def chunks = Channel.create()
+    int count=0
+    def chunks = []
     def buffer = new StringBuffer()
     file.eachLine { line ->
       if( line ==~ /^ +\d+\s+\d+/ ) {
          if( buffer.length() )
-             chunks << buffer.toString()
+             file = cacheableFile(buffer, "chunk-${count++}")
+             if(!file.exists()) file.text = buffer.toString()
+             chunks << file
          buffer.length = 0
       }
       buffer.append(line).append('\n')
